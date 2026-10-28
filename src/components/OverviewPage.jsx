@@ -327,7 +327,7 @@ export default function OverviewPage({
               <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center space-x-2">
                 <span>云厂商 VPS 与月度流量配额 (BandwagonHost KiwiVM)</span>
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
-                  共计 800 GB 流量池
+                  共计 {formatBytes(summary?.fleetMetrics?.bwhMonthlyBytes) || '800 GB'} 流量池
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -348,7 +348,10 @@ export default function OverviewPage({
         {/* 2 VPS Bandwidth Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {bwh.map(vps => {
-            const usedPct = vps.bandwidth?.usagePercent || 0;
+            const bw = vps.bandwidth || {};
+            const usedPct = typeof bw.percent === 'number' 
+              ? bw.percent 
+              : (bw.totalBytes > 0 ? Number(((bw.usedBytes / bw.totalBytes) * 100).toFixed(1)) : 0);
             const pctColor = getPercentColor(usedPct);
 
             return (
@@ -357,15 +360,17 @@ export default function OverviewPage({
                 className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="font-bold text-xs text-slate-800">{vps.label}</span>
-                      <span className="text-[11px] text-slate-400 block font-mono">
+                  <div className="flex items-start justify-between mb-2 gap-2">
+                    <div className="min-w-0">
+                      <span className="font-bold text-xs text-slate-800 block truncate">{vps.label}</span>
+                      <span className="text-[11px] text-slate-400 block font-mono truncate">
                         {vps.datacenter} • {vps.ip}
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                      {vps.bandwidth?.resetDaysRemaining ? `${vps.bandwidth.resetDaysRemaining} 天后重置` : '本月周期'}
+                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap shrink-0">
+                      {bw.daysUntilReset !== null && bw.daysUntilReset !== undefined 
+                        ? `${bw.daysUntilReset} 天后重置` 
+                        : (bw.nextResetDate ? new Date(bw.nextResetDate).toLocaleDateString() : '本月周期')}
                     </span>
                   </div>
 
@@ -373,12 +378,12 @@ export default function OverviewPage({
                     <div className="flex justify-between items-baseline mb-1 text-xs font-mono">
                       <span className="text-slate-500 font-sans">月度消耗</span>
                       <span className="font-bold text-slate-800">
-                        {formatBytes(vps.bandwidth?.usedBytes)} / {formatBytes(vps.bandwidth?.totalBytes)}
-                        <span className={`ml-1.5 ${pctColor.text}`}>({usedPct}%)</span>
+                        {formatBytes(bw.usedBytes)} / {formatBytes(bw.totalBytes)}
+                        <span className={`ml-1.5 font-bold ${pctColor.text}`}>({usedPct}%)</span>
                       </span>
                     </div>
 
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                       <div 
                         className={`h-full rounded-full transition-all duration-500 ${pctColor.bg}`}
                         style={{ width: `${Math.min(100, Math.max(0, usedPct))}%` }}
@@ -388,7 +393,7 @@ export default function OverviewPage({
                 </div>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                  <span>剩余可用: {formatBytes(vps.bandwidth?.remainingBytes)}</span>
+                  <span>剩余可用: <strong className="text-slate-600 font-semibold">{formatBytes(bw.remainingBytes)}</strong></span>
                   <span>SSH: :{vps.sshPort || 22}</span>
                 </div>
               </div>
