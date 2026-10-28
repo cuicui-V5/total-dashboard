@@ -5,11 +5,10 @@ import {
   Search, 
   Activity, 
   Layers, 
-  ShieldCheck, 
   HardDriveDownload,
-  Wifi,
   Sparkles,
-  TrendingUp
+  TrendingUp,
+  Bell
 } from 'lucide-react';
 
 export default function Header({ 
@@ -23,26 +22,27 @@ export default function Header({
   setAutoRefreshInterval, 
   isRefreshing, 
   onManualRefresh, 
-  lastUpdated 
+  lastUpdated,
+  alertCount = 0
 }) {
   const isAllOnline = totalNodes > 0 && onlineNodes === totalNodes;
 
   const tabs = [
-    { id: 'all', label: '综合总览', icon: Layers },
+    { id: 'overview', label: '综合概览', icon: Layers },
     { id: 'nodes', label: `设备节点 (${totalNodes})`, icon: Server },
-    { id: 'kuma', label: '链路状态', icon: Activity },
-    { id: 'kuma-charts', label: '延迟图表', icon: TrendingUp },
+    { id: 'kuma', label: '网络链路', icon: Activity },
+    { id: 'kuma-charts', label: '时序图表', icon: TrendingUp },
     { id: 'bwh', label: 'VPS 流量', icon: HardDriveDownload },
   ];
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-panel border-b border-slate-200/80 shadow-subtle mb-6">
+    <header className="sticky top-0 z-40 w-full glass-panel border-b border-slate-200/80 shadow-subtle mb-6 backdrop-blur-md bg-white/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           
-          {/* Logo & Status Badge */}
+          {/* Logo & Cluster Status Pill */}
           <div className="flex items-center space-x-3.5">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 transition-transform hover:scale-105 duration-200">
               <Server className="h-5 w-5" />
             </div>
             <div>
@@ -50,7 +50,7 @@ export default function Header({
                 <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
                   TotalDashboard
                 </h1>
-                <div className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                <div className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors ${
                   isAllOnline 
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                     : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -59,7 +59,7 @@ export default function Header({
                   <span>{onlineNodes}/{totalNodes} 在线</span>
                 </div>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 mt-0.5">
                 六台设备监控 • Uptime Kuma 链路 • 搬瓦工流量配额
               </p>
             </div>
@@ -76,7 +76,7 @@ export default function Header({
                 placeholder="搜索节点或服务..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-3 py-1.5 text-xs bg-slate-100/80 hover:bg-slate-100 focus:bg-white border border-transparent focus:border-sky-300 rounded-lg outline-none transition-all w-36 sm:w-44 focus:w-56 text-slate-700 placeholder-slate-400"
+                className="pl-9 pr-3 py-1.5 text-xs bg-slate-100/80 hover:bg-slate-100 focus:bg-white border border-transparent focus:border-sky-300 rounded-lg outline-none transition-all w-36 sm:w-44 focus:w-56 text-slate-700 placeholder-slate-400 shadow-xs"
               />
             </div>
 
@@ -84,7 +84,7 @@ export default function Header({
             <select
               value={autoRefreshInterval}
               onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-              className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none hover:border-slate-300 focus:border-sky-500 transition-colors cursor-pointer shadow-sm"
+              className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none hover:border-slate-300 focus:border-sky-500 transition-colors cursor-pointer shadow-xs"
               title="自动刷新周期"
             >
               <option value={5000}>5 秒刷新</option>
@@ -97,7 +97,7 @@ export default function Header({
             <button
               onClick={onManualRefresh}
               disabled={isRefreshing}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition-all shadow-sm disabled:opacity-50"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition-all shadow-xs disabled:opacity-50 active:scale-95"
               title="立即刷新数据"
             >
               <RefreshCw className={`h-3.5 w-3.5 text-slate-600 ${isRefreshing ? 'animate-spin text-sky-600' : ''}`} />
@@ -106,28 +106,35 @@ export default function Header({
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="mt-4 flex items-center space-x-1 overflow-x-auto border-t border-slate-200/60 pt-2.5 scrollbar-none">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-                  isActive
-                    ? 'bg-sky-50 text-sky-700 shadow-sm border border-sky-200/70'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 border border-transparent'
-                }`}
-              >
-                <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-sky-600' : 'text-slate-400'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Animated Navigation Tabs Bar */}
+        <div className="mt-4 flex items-center justify-between border-t border-slate-200/60 pt-3">
           
-          <div className="ml-auto text-[11px] text-slate-400 hidden lg:flex items-center space-x-1">
+          <nav className="flex items-center space-x-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shadow-inner overflow-x-auto scrollbar-none max-w-full">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`relative flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ease-out whitespace-nowrap active:scale-95 ${
+                    isActive
+                      ? 'bg-white text-sky-700 shadow-sm font-bold scale-[1.02]'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Icon className={`h-3.5 w-3.5 transition-transform duration-200 ${isActive ? 'scale-110 text-sky-600' : 'text-slate-400'}`} />
+                  <span>{tab.label}</span>
+                  {isActive && (
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-sky-500 rounded-full animate-in fade-in zoom-in-50 duration-200" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+          
+          <div className="text-[11px] text-slate-400 hidden lg:flex items-center space-x-1.5 pl-3">
             <Sparkles className="h-3 w-3 text-amber-500" />
             <span>最近同步: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '--:--:--'}</span>
           </div>

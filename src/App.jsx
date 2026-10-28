@@ -1,23 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Header from './components/Header';
-import SummaryCards from './components/SummaryCards';
+import OverviewPage from './components/OverviewPage';
 import NodeCard from './components/NodeCard';
 import NodeDetailModal from './components/NodeDetailModal';
 import KumaSection from './components/KumaSection';
 import KumaChartsPage from './components/KumaChartsPage';
 import BwhSection from './components/BwhSection';
-import AlertBanner from './components/AlertBanner';
+import FloatingAlerts from './components/FloatingAlerts';
 import { 
   Server, 
-  Layers, 
-  Activity, 
-  HardDriveDownload, 
-  AlertCircle, 
   RefreshCw,
-  Cpu,
-  Database,
-  ArrowDownUp
+  AlertCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -36,7 +30,7 @@ export default function App() {
   const [error, setError] = useState(null);
   
   // Navigation & Filtering
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(6000); // 6s fast interval, non-blocking
@@ -117,10 +111,12 @@ export default function App() {
     );
   });
 
+  const alerts = fleetData?.summary?.alerts || [];
+
   return (
-    <div className="min-h-screen flex flex-col justify-between">
+    <div className="min-h-screen flex flex-col justify-between relative">
       <div>
-        {/* Navigation & Toolbar */}
+        {/* Navigation & Toolbar with Tab Switch Animations */}
         <Header
           totalNodes={fleetData?.nodes?.length || 6}
           onlineNodes={fleetData?.nodes?.filter(n => n.online)?.length || 0}
@@ -133,13 +129,14 @@ export default function App() {
           isRefreshing={isRefreshing}
           onManualRefresh={() => fetchFleet(true)}
           lastUpdated={fleetData?.timestamp}
+          alertCount={alerts.length}
         />
+
+        {/* Global Floating Toast Alert Bubbles (Fixed positioning, ZERO layout shift!) */}
+        <FloatingAlerts alerts={alerts} />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
           
-          {/* Global Alert notifications */}
-          <AlertBanner alerts={fleetData?.summary?.alerts} />
-
           {/* Initial Loading placeholder only if zero cache */}
           {loading && !fleetData && (
             <div className="flex flex-col items-center justify-center py-24 space-y-4 text-slate-400">
@@ -161,64 +158,80 @@ export default function App() {
 
           {fleetData && (
             <>
-              {/* Top High-level Metric Stat Cards */}
-              <SummaryCards summary={fleetData.summary} />
-
-              {/* TAB CONTENT: ALL or NODES */}
-              {(activeTab === 'all' || activeTab === 'nodes') && (
-                <section className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-2">
-                      <Server className="h-4 w-4 text-sky-600" />
-                      <h2 className="text-base font-bold text-slate-800 tracking-tight">
-                        设备节点详情 ({filteredNodes.length})
-                      </h2>
-                    </div>
-                    <span className="text-xs text-slate-400">
-                      独立异步轮询 • 毫秒级极速响应
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {filteredNodes.map(node => (
-                      <NodeCard 
-                        key={node.id} 
-                        node={node} 
-                        onOpenDetails={setSelectedNode} 
-                      />
-                    ))}
-                  </div>
-
-                  {filteredNodes.length === 0 && (
-                    <div className="p-8 text-center text-xs text-slate-400 bg-white/60 rounded-xl border border-slate-200">
-                      未找到匹配 "{searchQuery}" 的设备节点
-                    </div>
-                  )}
-                </section>
+              {/* TAB 1: CONCISE EXECUTIVE OVERVIEW (综合概览) */}
+              {activeTab === 'overview' && (
+                <div key="overview" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
+                  <OverviewPage 
+                    fleetData={fleetData}
+                    onSelectNode={setSelectedNode}
+                    onNavigateTab={setActiveTab}
+                  />
+                </div>
               )}
 
-              {/* TAB CONTENT: ALL or KUMA */}
-              {(activeTab === 'all' || activeTab === 'kuma') && (
-                <section>
-                  <KumaSection kuma={{
-                    ...fleetData.kuma,
-                    monitors: filteredMonitors
-                  }} />
-                </section>
+              {/* TAB 2: DETAILED FLEET NODES (设备节点详情) */}
+              {activeTab === 'nodes' && (
+                <div key="nodes" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
+                  <section className="mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <Server className="h-4 w-4 text-sky-600" />
+                        <h2 className="text-base font-bold text-slate-800 tracking-tight">
+                          设备节点详情与规格 ({filteredNodes.length})
+                        </h2>
+                      </div>
+                      <span className="text-xs text-slate-400">
+                        独立异步轮询 • 毫秒级极速响应 • 点击卡片可查看进程与详细挂载
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {filteredNodes.map(node => (
+                        <NodeCard 
+                          key={node.id} 
+                          node={node} 
+                          onOpenDetails={setSelectedNode} 
+                        />
+                      ))}
+                    </div>
+
+                    {filteredNodes.length === 0 && (
+                      <div className="p-8 text-center text-xs text-slate-400 bg-white/60 rounded-xl border border-slate-200">
+                        未找到匹配 "{searchQuery}" 的设备节点
+                      </div>
+                    )}
+                  </section>
+                </div>
               )}
 
-              {/* TAB CONTENT: DEDICATED KUMA CHARTS */}
+              {/* TAB 3: DETAILED KUMA NETWORK MONITORS (网络链路状态) */}
+              {activeTab === 'kuma' && (
+                <div key="kuma" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
+                  <section>
+                    <KumaSection kuma={{
+                      ...fleetData.kuma,
+                      monitors: filteredMonitors
+                    }} />
+                  </section>
+                </div>
+              )}
+
+              {/* TAB 4: HIGH DENSITY LATENCY CHARTS (千点时序图表) */}
               {activeTab === 'kuma-charts' && (
-                <section>
-                  <KumaChartsPage kuma={fleetData.kuma} />
-                </section>
+                <div key="kuma-charts" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
+                  <section>
+                    <KumaChartsPage kuma={fleetData.kuma} />
+                  </section>
+                </div>
               )}
 
-              {/* TAB CONTENT: ALL or BWH */}
-              {(activeTab === 'all' || activeTab === 'bwh') && (
-                <section>
-                  <BwhSection bwhInstances={filteredBwh} />
-                </section>
+              {/* TAB 5: DETAILED VPS & BANDWIDTH (搬瓦工 VPS 流量) */}
+              {activeTab === 'bwh' && (
+                <div key="bwh" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
+                  <section>
+                    <BwhSection bwhInstances={filteredBwh} />
+                  </section>
+                </div>
               )}
             </>
           )}
