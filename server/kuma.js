@@ -46,8 +46,12 @@ export async function fetchUptimeKumaMetrics(kumaUrl, apiKey) {
       if (!match) continue;
 
       const [, metricName, labelStr, valueStr] = match;
+      if (!metricName.startsWith('monitor_')) continue;
+
       const labels = parseLabels(labelStr);
-      const name = labels.monitor_name || 'Unknown';
+      const name = labels.monitor_name;
+      if (!name) continue;
+
       const value = parseFloat(valueStr);
 
       if (!monitorsMap.has(name)) {
