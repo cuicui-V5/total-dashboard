@@ -1,6 +1,7 @@
 import { fetchGlancesNode } from './glances.js';
 import { fetchUptimeKumaMetrics } from './kuma.js';
 import { fetchAllBwhInstances } from './bwh.js';
+import { getHistoryDb, recordLatencySnapshot, seedFromOfficialKuma, cleanupRetention } from './kuma-db.js';
 
 /**
  * Parses environment configuration
@@ -177,6 +178,8 @@ async function pollSingleGlancesNode(node, auth) {
 /**
  * Poll Uptime Kuma in background
  */
+let lastRecordedKumaTime = 0;
+
 async function pollKuma(kumaConfig) {
   if (inMemoryStore.kumaPollingLock) return;
   inMemoryStore.kumaPollingLock = true;
@@ -184,6 +187,13 @@ async function pollKuma(kumaConfig) {
     const res = await fetchUptimeKumaMetrics(kumaConfig.url, kumaConfig.apiKey);
     if (res && res.monitors?.length > 0) {
       inMemoryStore.kumaData = res;
+
+      // Throttle recording to local SQLite timeseries every 20 seconds
+      const now = Date.now();
+      if (now - lastRecordedKumaTime >= 20000) {
+        lastRecordedKumaTime = now;
+        recordLatencySnapshot(res.monitors);
+      }
     }
   } catch (err) {
     console.error('[Poller] Kuma poll error:', err.message);
@@ -220,6 +230,19 @@ export function startBackgroundPoller() {
 
   const { glancesAuth, glancesNodes, kumaConfig, bwhInstances } = getFleetConfig();
   console.log(`📡 Background Poller Engine started. Managing ${glancesNodes.length} nodes, Uptime Kuma, and BWH...`);
+
+  // Initialize SQLite history database and seed initial data from official Uptime Kuma
+  try {
+    getHistoryDb();
+    seedFromOfficialKuma(kumaConfig.url, kumaConfig.apiKey);
+  } catch (dbErr) {
+    console.error('[Poller] Failed to init/seed local SQLite history:', dbErr.message);
+  }
+
+  // Schedule hourly 30-day retention cleanup
+  setInterval(() => {
+    cleanupRetention(30);
+  }, 3600 * 1000);
 
   // Initial immediate poll for all data
   glancesNodes.forEach(node => pollSingleGlancesNode(node, glancesAuth));

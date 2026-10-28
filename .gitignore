@@ -13,6 +13,13 @@ yarn-error.log*
 dist/
 build/
 
+# Local SQLite databases and persistent data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # OS / Editor files
 .DS_Store
 Thumbs.db

@@ -33,6 +33,11 @@ COPY --from=builder /app/dist ./dist
 # Copy backend server code
 COPY server ./server
 
+# Create persistent data directory for SQLite timeseries
+RUN mkdir -p /app/data
+ENV DATA_DIR=/app/data
+VOLUME ["/app/data"]
+
 # Expose default port
 EXPOSE 3344
 
