@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getAggregatedFleetData, startBackgroundPoller } from './aggregator.js';
+import { queryKumaHistory } from './kuma-history.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,29 @@ app.get('/api/fleet', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Fleet API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Uptime Kuma multi-range history endpoint (1h, 24h, 7d, 30d)
+app.get('/api/kuma/history', async (req, res) => {
+  try {
+    const range = req.query.range || '24h';
+    const data = queryKumaHistory(range);
+    if (data && data.timeline?.length > 0) {
+      return res.json(data);
+    }
+    // Fallback if sqlite direct query unavailable
+    const fleet = await getAggregatedFleetData();
+    res.json({
+      range,
+      source: 'api-fallback',
+      monitors: fleet.kuma.monitors,
+      timeline: fleet.kuma.timeline,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Kuma history API error:', error);
     res.status(500).json({ error: error.message });
   }
 });

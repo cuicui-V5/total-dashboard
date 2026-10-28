@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import { 
   Activity, 
   TrendingUp, 
@@ -10,22 +11,65 @@ import {
   Layers, 
   SlidersHorizontal,
   ChevronDown,
+  Calendar,
+  RefreshCw,
   Info
 } from 'lucide-react';
 import { getLatencyBadge } from '../utils/format';
 
 export default function KumaChartsPage({ kuma }) {
-  const monitors = kuma?.monitors || [];
-  const timeline = kuma?.timeline || [];
+  const defaultMonitors = kuma?.monitors || [];
+  const defaultTimeline = kuma?.timeline || [];
+
+  // Time Range Selection ('1h' | '24h' | '7d' | '30d')
+  const [selectedRange, setSelectedRange] = useState('24h');
+  const [rangeData, setRangeData] = useState(null);
+  const [isRangeLoading, setIsRangeLoading] = useState(false);
+
+  // Fetch range data from /api/kuma/history
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchHistory = async () => {
+      setIsRangeLoading(true);
+      try {
+        const res = await axios.get(`/api/kuma/history?range=${selectedRange}`);
+        if (!isCancelled && res.data && res.data.timeline) {
+          setRangeData(res.data);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch range history:', err);
+      } finally {
+        if (!isCancelled) setIsRangeLoading(false);
+      }
+    };
+
+    fetchHistory();
+    return () => { isCancelled = true; };
+  }, [selectedRange]);
+
+  // Active monitors & timeline based on selected range
+  const monitors = (rangeData && rangeData.monitors?.length > 0) ? rangeData.monitors : defaultMonitors;
+  const timeline = (rangeData && rangeData.timeline?.length > 0) ? rangeData.timeline : defaultTimeline;
 
   // Track which monitor lines are visible on the chart
   const [visibleMonitors, setVisibleMonitors] = useState(() => {
     const initial = {};
-    monitors.forEach(m => {
-      initial[m.name] = true;
-    });
+    defaultMonitors.forEach(m => { initial[m.name] = true; });
     return initial;
   });
+
+  // Ensure any new monitor from range query is visible by default
+  useEffect(() => {
+    if (monitors.length > 0) {
+      setVisibleMonitors(prev => {
+        const next = { ...prev };
+        monitors.forEach(m => {
+          if (next[m.name] === undefined) next[m.name] = true;
+        });
+        return next;
+      });
+    }
+  }, [monitors]);
 
   // Hover state for interactive chart crosshair
   const [hoverIndex, setHoverIndex] = useState(null);
@@ -79,7 +123,7 @@ export default function KumaChartsPage({ kuma }) {
         totalPing += ping;
         validPingCount++;
       }
-      totalUptime += (m.uptime24h || 100);
+      totalUptime += (m.uptime || m.uptime24h || 100);
       totalJitter += (m.stats?.jitter || 0);
     });
 
@@ -119,7 +163,6 @@ export default function KumaChartsPage({ kuma }) {
         }
       });
     });
-    // Add 15% headroom and round to nice number
     return Math.ceil((max * 1.15) / 50) * 50 || 100;
   }, [timeline, monitors, visibleMonitors]);
 
@@ -138,8 +181,14 @@ export default function KumaChartsPage({ kuma }) {
     }, '');
   };
 
-  // Y-axis tick values
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(ratio => Math.round(maxY * ratio));
+
+  const timeRanges = [
+    { id: '1h', label: '最近 1 小时', desc: '秒级心跳采样' },
+    { id: '24h', label: '过去 24 小时', desc: '逐小时聚合' },
+    { id: '7d', label: '过去 7 天', desc: '4小时粒度趋势' },
+    { id: '30d', label: '过去 30 天', desc: '天级宏观分析' },
+  ];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -157,19 +206,36 @@ export default function KumaChartsPage({ kuma }) {
                   Uptime Kuma 链路延迟与历史分析
                 </h2>
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">
-                  50 周期时序采样
+                  {timeRanges.find(r => r.id === selectedRange)?.desc || '历史时序'}
                 </span>
+                {isRangeLoading && (
+                  <RefreshCw className="h-3 w-3 animate-spin text-sky-500" />
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                实时对比局域网设备、国内核心网站与海外云主机的 Ping 响应延迟、网络抖动与 24h 可用率
+                实时对比局域网设备、国内核心网站与海外云主机的 Ping 响应延迟、网络抖动与长效可用率
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-mono text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
-              链路采样: {timeline.length} 轮次
-            </span>
+          {/* Time Range Selector Tabs */}
+          <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shadow-inner">
+            {timeRanges.map(r => {
+              const isSelected = selectedRange === r.id;
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => setSelectedRange(r.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'bg-white text-sky-700 shadow-sm font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -210,7 +276,7 @@ export default function KumaChartsPage({ kuma }) {
               <Clock className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-[11px] font-medium text-sky-800 block">全网平均延迟</span>
+              <span className="text-[11px] font-medium text-sky-800 block">{selectedRange.toUpperCase()} 周期平均延迟</span>
               <span className="text-base font-bold text-slate-800 font-mono">
                 {fleetStats.avgPing} ms
               </span>
@@ -225,7 +291,7 @@ export default function KumaChartsPage({ kuma }) {
               <CheckCircle2 className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-[11px] font-medium text-indigo-800 block">24小时综合可用率</span>
+              <span className="text-[11px] font-medium text-indigo-800 block">{selectedRange.toUpperCase()} 综合可用率</span>
               <span className="text-base font-bold text-slate-800 font-mono">
                 {fleetStats.avgUptime}%
               </span>
@@ -243,7 +309,7 @@ export default function KumaChartsPage({ kuma }) {
           <div>
             <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
               <Activity className="h-4 w-4 text-sky-600" />
-              <span>全链路实时与历史延迟趋势图 (Multi-Target Latency Trend)</span>
+              <span>全链路延迟趋势对比 ({selectedRange.toUpperCase()} 周期，采样 {timeline.length} 点)</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
               点击下方标签可显示/隐藏特定链路，悬浮可精准查看各采样点详细延迟数值
@@ -467,9 +533,9 @@ export default function KumaChartsPage({ kuma }) {
         <div className="lg:col-span-1 glass-panel rounded-2xl p-5 shadow-subtle border border-slate-200/80">
           <h3 className="font-bold text-slate-800 text-sm mb-1 flex items-center space-x-2">
             <SlidersHorizontal className="h-4 w-4 text-indigo-600" />
-            <span>链路响应延迟阶梯排行</span>
+            <span>链路响应延迟阶梯排行 ({selectedRange.toUpperCase()})</span>
           </h3>
-          <p className="text-xs text-slate-400 mb-4">按 50 轮采样均值升序排列</p>
+          <p className="text-xs text-slate-400 mb-4">按选定周期均值升序排列</p>
 
           <div className="space-y-3 font-mono text-xs">
             {rankedMonitors.map((m, idx) => {
@@ -507,14 +573,14 @@ export default function KumaChartsPage({ kuma }) {
             <div>
               <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
                 <Activity className="h-4 w-4 text-emerald-600" />
-                <span>各链路 50 次心跳可用率条带图 (Heartbeat Strips)</span>
+                <span>各链路历史心跳条带图与健康度 (Heartbeat Strips)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 每格代表 1 次检测结果（绿色表示 UP，红色表示 DOWN，悬浮查看详情）
               </p>
             </div>
             <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              Uptime 24h
+              {selectedRange.toUpperCase()} 可用率
             </span>
           </div>
 
@@ -540,12 +606,12 @@ export default function KumaChartsPage({ kuma }) {
                       <span>峰值: <strong className="text-slate-700">{stats.maxPing ?? '--'}ms</strong></span>
                       <span>抖动: <strong className="text-indigo-600">±{stats.jitter ?? 0}ms</strong></span>
                       <span className="text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded font-bold">
-                        {m.uptime24h || 100}%
+                        {m.uptime || m.uptime24h || 100}%
                       </span>
                     </div>
                   </div>
 
-                  {/* 50 Heartbeat Strip Blocks */}
+                  {/* Heartbeat Strip Blocks */}
                   <div className="flex items-center space-x-1 overflow-x-auto py-1">
                     {hbList.length > 0 ? (
                       hbList.map((hb, hIdx) => {
@@ -563,7 +629,9 @@ export default function KumaChartsPage({ kuma }) {
                         );
                       })
                     ) : (
-                      <span className="text-xs text-slate-400 italic">暂无历史心跳条带</span>
+                      <div className="w-full bg-slate-200/60 h-2 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${m.uptime || 100}%` }} />
+                      </div>
                     )}
                   </div>
                 </div>

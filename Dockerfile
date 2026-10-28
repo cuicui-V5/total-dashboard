@@ -1,5 +1,5 @@
 # Multi-stage build for optimal image size and security
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -16,12 +16,13 @@ COPY . .
 RUN npm run build
 
 # Production runtime stage
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3344
+ENV UPTIME_KUMA_DB_PATH=/data/kuma.db
 
 # Copy package definitions and install only production dependencies
 COPY package*.json ./
