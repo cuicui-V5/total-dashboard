@@ -1,10 +1,6 @@
-import { fetchAllGlancesNodes } from './glances.js';
+import { fetchGlancesNode } from './glances.js';
 import { fetchUptimeKumaMetrics } from './kuma.js';
 import { fetchAllBwhInstances } from './bwh.js';
-
-let cachedData = null;
-let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 5000; // 5-second server cache to ensure smooth responsiveness and prevent overloading nodes
 
 /**
  * Parses environment configuration
@@ -15,7 +11,6 @@ export function getFleetConfig() {
     password: process.env.GLANCES_PASSWORD || ''
   };
 
-  // GLANCES_NODES: id|label|url|tag,...
   const rawGlancesNodes = (process.env.GLANCES_NODES || '').split(',').map(item => item.trim()).filter(Boolean);
   const glancesNodes = rawGlancesNodes.map(item => {
     const [id, label, url, tag] = item.split('|');
@@ -27,7 +22,6 @@ export function getFleetConfig() {
     apiKey: process.env.UPTIME_KUMA_API_KEY || ''
   };
 
-  // BWH_INSTANCES: id|label|veid|api_key,...
   const rawBwh = (process.env.BWH_INSTANCES || '').split(',').map(item => item.trim()).filter(Boolean);
   const bwhInstances = rawBwh.map(item => {
     const [id, label, veid, apiKey] = item.split('|');
@@ -42,29 +36,55 @@ export function getFleetConfig() {
   };
 }
 
+// In-Memory Real-time State Store
+const inMemoryStore = {
+  nodesMap: new Map(), // node.id -> node state
+  kumaData: { online: true, totalCount: 0, upCount: 0, downCount: 0, healthPercent: 100, monitors: [] },
+  bwhData: [],
+  nodePollingLocks: new Set(),
+  kumaPollingLock: false,
+  bwhPollingLock: false,
+  isInitialized: false,
+  lastSnapshot: null
+};
+
 /**
- * Fetch and aggregate entire fleet dashboard state
+ * Build snapshot from in-memory state (Executed in 0ms)
  */
-export async function getAggregatedFleetData(forceRefresh = false) {
-  const now = Date.now();
-  if (!forceRefresh && cachedData && (now - lastFetchTimestamp < CACHE_TTL_MS)) {
-    return cachedData;
-  }
+function buildFleetSnapshot() {
+  const { glancesNodes } = getFleetConfig();
+  
+  // Reconstruct nodes in original configured order
+  const nodes = glancesNodes.map(cfg => {
+    return inMemoryStore.nodesMap.get(cfg.id) || {
+      id: cfg.id,
+      label: cfg.label,
+      tag: cfg.tag,
+      url: cfg.url,
+      online: false,
+      latencyMs: null,
+      error: '正在建立连接...',
+      system: { hostname: cfg.label, osName: 'Loading', uptime: '...' },
+      cpu: { percent: 0, cores: 1, loadAvg: [0, 0, 0] },
+      memory: { percent: 0, totalBytes: 0, usedBytes: 0 },
+      swap: { percent: 0, totalBytes: 0, usedBytes: 0 },
+      disks: [],
+      network: { interfaces: [], totalRxRate: 0, totalTxRate: 0 },
+      processes: { total: 0, running: 0, topList: [] },
+      containers: [],
+      sensors: [],
+      lastUpdated: new Date().toISOString()
+    };
+  });
 
-  const { glancesAuth, glancesNodes, kumaConfig, bwhInstances } = getFleetConfig();
+  const kuma = inMemoryStore.kumaData;
+  const bwh = inMemoryStore.bwhData;
 
-  // Run all 3 major source queries concurrently
-  const [glancesResults, kumaResult, bwhResults] = await Promise.all([
-    fetchAllGlancesNodes(glancesNodes, glancesAuth),
-    fetchUptimeKumaMetrics(kumaConfig.url, kumaConfig.apiKey),
-    fetchAllBwhInstances(bwhInstances)
-  ]);
+  // Summary Metrics
+  const totalGlances = nodes.length;
+  const onlineGlances = nodes.filter(n => n.online).length;
+  const onlineNodes = nodes.filter(n => n.online);
 
-  // Compute fleet summary statistics
-  const totalGlances = glancesResults.length;
-  const onlineGlances = glancesResults.filter(n => n.online).length;
-
-  const onlineNodes = glancesResults.filter(n => n.online);
   const avgCpu = onlineNodes.length > 0
     ? Number((onlineNodes.reduce((acc, n) => acc + (n.cpu?.percent || 0), 0) / onlineNodes.length).toFixed(1))
     : 0;
@@ -76,52 +96,45 @@ export async function getAggregatedFleetData(forceRefresh = false) {
   const totalNetworkRx = onlineNodes.reduce((acc, n) => acc + (n.network?.totalRxRate || 0), 0);
   const totalNetworkTx = onlineNodes.reduce((acc, n) => acc + (n.network?.totalTxRate || 0), 0);
 
-  // Bandwidth Summary from BWH
-  const totalBwhMonthly = bwhResults.reduce((acc, b) => acc + (b.bandwidth?.totalBytes || 0), 0);
-  const totalBwhUsed = bwhResults.reduce((acc, b) => acc + (b.bandwidth?.usedBytes || 0), 0);
+  const totalBwhMonthly = bwh.reduce((acc, b) => acc + (b.bandwidth?.totalBytes || 0), 0);
+  const totalBwhUsed = bwh.reduce((acc, b) => acc + (b.bandwidth?.usedBytes || 0), 0);
   const bwhUsagePercent = totalBwhMonthly > 0 ? Number(((totalBwhUsed / totalBwhMonthly) * 100).toFixed(1)) : 0;
 
-  // Alerts
   const alerts = [];
-  glancesResults.forEach(node => {
+  nodes.forEach(node => {
     if (!node.online) {
-      alerts.push({ level: 'critical', source: node.label, message: `Node is offline (${node.error || 'timeout'})` });
+      alerts.push({ level: 'critical', source: node.label, message: `节点离线: ${node.error || '连接超时'}` });
     } else {
       if (node.cpu?.percent > 85) {
-        alerts.push({ level: 'warning', source: node.label, message: `High CPU usage: ${node.cpu.percent}%` });
+        alerts.push({ level: 'warning', source: node.label, message: `CPU 高负载: ${node.cpu.percent}%` });
       }
       if (node.memory?.percent > 90) {
-        alerts.push({ level: 'warning', source: node.label, message: `High Memory usage: ${node.memory.percent}%` });
+        alerts.push({ level: 'warning', source: node.label, message: `内存占用过高: ${node.memory.percent}%` });
       }
     }
   });
 
-  kumaResult.monitors.forEach(mon => {
+  kuma.monitors.forEach(mon => {
     if (mon.status === 'down') {
-      alerts.push({ level: 'critical', source: `Uptime: ${mon.name}`, message: `Service is DOWN` });
+      alerts.push({ level: 'critical', source: `Uptime: ${mon.name}`, message: `服务离线 (DOWN)` });
     } else if (mon.certDaysRemaining !== null && mon.certDaysRemaining <= 14) {
-      alerts.push({ level: 'warning', source: `SSL: ${mon.name}`, message: `Certificate expires in ${mon.certDaysRemaining} days` });
+      alerts.push({ level: 'warning', source: `SSL 证书: ${mon.name}`, message: `证书将于 ${mon.certDaysRemaining} 天后到期` });
     }
   });
 
-  bwhResults.forEach(vps => {
-    if (vps.bandwidth?.percent > 80) {
-      alerts.push({ level: 'warning', source: vps.label, message: `Bandwidth usage reached ${vps.bandwidth.percent}%` });
-    }
-  });
-
-  const payload = {
+  const snapshot = {
     timestamp: new Date().toISOString(),
+    isInstant: true,
     summary: {
       fleetNodes: {
         total: totalGlances,
         online: onlineGlances,
-        healthy: onlineGlances === totalGlances
+        healthy: onlineGlances === totalGlances && totalGlances > 0
       },
       kuma: {
-        total: kumaResult.totalCount,
-        up: kumaResult.upCount,
-        healthPercent: kumaResult.healthPercent
+        total: kuma.totalCount,
+        up: kuma.upCount,
+        healthPercent: kuma.healthPercent
       },
       fleetMetrics: {
         avgCpuPercent: avgCpu,
@@ -134,13 +147,118 @@ export async function getAggregatedFleetData(forceRefresh = false) {
       },
       alerts
     },
-    nodes: glancesResults,
-    kuma: kumaResult,
-    bwh: bwhResults
+    nodes,
+    kuma,
+    bwh
   };
 
-  cachedData = payload;
-  lastFetchTimestamp = now;
+  inMemoryStore.lastSnapshot = snapshot;
+  return snapshot;
+}
 
-  return payload;
+/**
+ * Poll a single glances node independently in background
+ */
+async function pollSingleGlancesNode(node, auth) {
+  if (inMemoryStore.nodePollingLocks.has(node.id)) return;
+  inMemoryStore.nodePollingLocks.add(node.id);
+
+  try {
+    const prevData = inMemoryStore.nodesMap.get(node.id);
+    const result = await fetchGlancesNode(node, auth, prevData);
+    inMemoryStore.nodesMap.set(node.id, result);
+  } catch (err) {
+    console.error(`[Poller] Node ${node.label} poll error:`, err.message);
+  } finally {
+    inMemoryStore.nodePollingLocks.delete(node.id);
+  }
+}
+
+/**
+ * Poll Uptime Kuma in background
+ */
+async function pollKuma(kumaConfig) {
+  if (inMemoryStore.kumaPollingLock) return;
+  inMemoryStore.kumaPollingLock = true;
+  try {
+    const res = await fetchUptimeKumaMetrics(kumaConfig.url, kumaConfig.apiKey);
+    if (res && res.monitors?.length > 0) {
+      inMemoryStore.kumaData = res;
+    }
+  } catch (err) {
+    console.error('[Poller] Kuma poll error:', err.message);
+  } finally {
+    inMemoryStore.kumaPollingLock = false;
+  }
+}
+
+/**
+ * Poll BandwagonHost in background
+ */
+async function pollBwh(bwhInstances) {
+  if (inMemoryStore.bwhPollingLock) return;
+  inMemoryStore.bwhPollingLock = true;
+  try {
+    const res = await fetchAllBwhInstances(bwhInstances);
+    if (res && res.length > 0) {
+      inMemoryStore.bwhData = res;
+    }
+  } catch (err) {
+    console.error('[Poller] BWH poll error:', err.message);
+  } finally {
+    inMemoryStore.bwhPollingLock = false;
+  }
+}
+
+/**
+ * Active Background Poller Engine
+ * Starts independent interval workers for each node & service
+ */
+export function startBackgroundPoller() {
+  if (inMemoryStore.isInitialized) return;
+  inMemoryStore.isInitialized = true;
+
+  const { glancesAuth, glancesNodes, kumaConfig, bwhInstances } = getFleetConfig();
+  console.log(`📡 Background Poller Engine started. Managing ${glancesNodes.length} nodes, Uptime Kuma, and BWH...`);
+
+  // Initial immediate poll for all data
+  glancesNodes.forEach(node => pollSingleGlancesNode(node, glancesAuth));
+  pollKuma(kumaConfig);
+  pollBwh(bwhInstances);
+
+  // Set up independent polling intervals:
+  // LAN nodes: 5 seconds interval
+  // Cloud/VPS nodes: 8 seconds interval
+  glancesNodes.forEach(node => {
+    const intervalMs = node.tag === 'LAN' ? 5000 : 8000;
+    setInterval(() => {
+      pollSingleGlancesNode(node, glancesAuth);
+    }, intervalMs);
+  });
+
+  // Uptime Kuma: 6 seconds interval
+  setInterval(() => {
+    pollKuma(kumaConfig);
+  }, 6000);
+
+  // BandwagonHost: 30 seconds interval (prevents KiwiVM API rate limiting)
+  setInterval(() => {
+    pollBwh(bwhInstances);
+  }, 30000);
+}
+
+/**
+ * Instant API handler (< 1ms execution, never blocks client)
+ */
+export async function getAggregatedFleetData(forceRefresh = false) {
+  // If force refresh requested, trigger background update in non-blocking fashion
+  if (forceRefresh) {
+    const { glancesAuth, glancesNodes, kumaConfig, bwhInstances } = getFleetConfig();
+    glancesNodes.forEach(node => pollSingleGlancesNode(node, glancesAuth));
+    pollKuma(kumaConfig);
+    pollBwh(bwhInstances);
+  }
+
+  // Return the in-memory state snapshot immediately!
+  return buildFleetSnapshot();
 }

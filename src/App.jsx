@@ -20,8 +20,17 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [fleetData, setFleetData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Instant Hydration from LocalStorage cache (0ms perceived load time!)
+  const [fleetData, setFleetData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('total_dashboard_cache');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [loading, setLoading] = useState(!fleetData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   
@@ -29,30 +38,40 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(10000); // 10 seconds default
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(6000); // 6s fast interval, non-blocking
 
   const fetchFleet = useCallback(async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
       const url = isManual ? '/api/fleet?force=true' : '/api/fleet';
-      const res = await axios.get(url);
+      const res = await axios.get(url, { timeout: 5000 });
       setFleetData(res.data);
       setError(null);
+      
+      // Save snapshot for next instant startup
+      try {
+        localStorage.setItem('total_dashboard_cache', JSON.stringify(res.data));
+      } catch (e) {
+        // ignore localStorage quota errors
+      }
     } catch (err) {
-      console.error('Failed to fetch fleet metrics:', err);
-      setError('无法连接后端服务或数据拉取失败，请检查网络或后端状态。');
+      console.warn('Failed to fetch fleet metrics:', err);
+      // Only set blocking error if we have no prior data
+      if (!fleetData) {
+        setError('正在连接后台监控引擎，请稍候...');
+      }
     } finally {
       setLoading(false);
       if (isManual) setIsRefreshing(false);
     }
-  }, []);
+  }, [fleetData]);
 
   // Initial load
   useEffect(() => {
     fetchFleet(false);
   }, [fetchFleet]);
 
-  // Periodic polling
+  // Periodic non-blocking polling
   useEffect(() => {
     if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
     const timer = setInterval(() => {
@@ -120,21 +139,21 @@ export default function App() {
           {/* Global Alert notifications */}
           <AlertBanner alerts={fleetData?.summary?.alerts} />
 
-          {/* Initial Loading Skeleton */}
+          {/* Initial Loading placeholder only if zero cache */}
           {loading && !fleetData && (
             <div className="flex flex-col items-center justify-center py-24 space-y-4 text-slate-400">
               <RefreshCw className="h-8 w-8 animate-spin text-sky-500" />
-              <p className="text-sm font-medium">正在拉取各节点与服务监控数据...</p>
+              <p className="text-sm font-medium">正在连接本地与云端节点数据...</p>
             </div>
           )}
 
-          {/* Error Banner */}
-          {error && (
-            <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center space-x-3 text-sm">
+          {/* Soft connection notice */}
+          {error && !fleetData && (
+            <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex items-center space-x-3 text-sm">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <div>
-                <p className="font-semibold">数据加载异常</p>
-                <p className="text-xs text-rose-600 mt-0.5">{error}</p>
+                <p className="font-semibold">正在同步数据</p>
+                <p className="text-xs text-amber-700 mt-0.5">{error}</p>
               </div>
             </div>
           )}
@@ -155,7 +174,7 @@ export default function App() {
                       </h2>
                     </div>
                     <span className="text-xs text-slate-400">
-                      实时采集 CPU、内存、磁盘与进程指标
+                      独立异步轮询 • 毫秒级极速响应
                     </span>
                   </div>
 
@@ -213,7 +232,7 @@ export default function App() {
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-slate-600">TotalDashboard</span>
             <span>•</span>
-            <span>Glances + Uptime Kuma + KiwiVM 聚合看板</span>
+            <span>异步聚合与后台持久轮询引擎</span>
           </div>
           <div>
             运行于 PVE Ubuntu • 浅色优雅现代设计

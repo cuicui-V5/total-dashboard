@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAggregatedFleetData } from './aggregator.js';
+import { getAggregatedFleetData, startBackgroundPoller } from './aggregator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,4 +53,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 TotalDashboard server listening on http://0.0.0.0:${PORT}`);
+  startBackgroundPoller();
 });

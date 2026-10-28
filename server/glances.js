@@ -3,7 +3,7 @@ import axios from 'axios';
 /**
  * Fetch and normalize data from a single Glances node
  */
-export async function fetchGlancesNode(node, auth) {
+export async function fetchGlancesNode(node, auth, previousNodeData = null) {
   const startTime = Date.now();
   const basicAuthHeader = 'Basic ' + Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
 
@@ -13,7 +13,8 @@ export async function fetchGlancesNode(node, auth) {
         'Authorization': basicAuthHeader,
         'Accept': 'application/json'
       },
-      timeout: 12000
+      // Fast timeout: 4s is plenty for Glances API; prevents hanging on slow international routes
+      timeout: 4000
     });
 
     const latencyMs = Date.now() - startTime;
@@ -67,8 +68,8 @@ export async function fetchGlancesNode(node, auth) {
       .filter(n => n.interface_name && n.interface_name !== 'lo')
       .map(n => ({
         name: n.interface_name,
-        rxSpeedBytes: n.rx || 0, // bytes/sec
-        txSpeedBytes: n.tx || 0, // bytes/sec
+        rxSpeedBytes: n.rx || 0,
+        txSpeedBytes: n.tx || 0,
         cumulativeRxBytes: n.cumulative_rx || 0,
         cumulativeTxBytes: n.cumulative_tx || 0
       })) : [];
@@ -148,10 +149,21 @@ export async function fetchGlancesNode(node, auth) {
       },
       containers,
       sensors,
+      lastSeen: new Date().toISOString(),
       lastUpdated: new Date().toISOString()
     };
   } catch (error) {
     const latencyMs = Date.now() - startTime;
+    let friendlyError = error.message;
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      friendlyError = '网络延迟过高 (请求超时)';
+    } else if (error.code === 'ECONNRESET') {
+      friendlyError = '连接被重置 (网络波动)';
+    } else if (error.code === 'ECONNREFUSED') {
+      friendlyError = '端口未开放或服务未启动';
+    }
+
+    const prev = previousNodeData || {};
     return {
       id: node.id,
       label: node.label,
@@ -159,20 +171,21 @@ export async function fetchGlancesNode(node, auth) {
       url: node.url,
       online: false,
       latencyMs,
-      error: error.message,
-      system: {
+      error: friendlyError,
+      lastSeen: prev.lastSeen || null,
+      system: prev.system || {
         hostname: node.label,
         osName: 'Unknown',
-        uptime: 'Unreachable'
+        uptime: '无法连接'
       },
-      cpu: { percent: 0, cores: 1, loadAvg: [0, 0, 0] },
-      memory: { percent: 0, totalBytes: 0, usedBytes: 0 },
-      swap: { percent: 0, totalBytes: 0, usedBytes: 0 },
-      disks: [],
+      cpu: prev.cpu || { percent: 0, cores: 1, loadAvg: [0, 0, 0] },
+      memory: prev.memory || { percent: 0, totalBytes: 0, usedBytes: 0 },
+      swap: prev.swap || { percent: 0, totalBytes: 0, usedBytes: 0 },
+      disks: prev.disks || [],
       network: { interfaces: [], totalRxRate: 0, totalTxRate: 0 },
-      processes: { total: 0, running: 0, topList: [] },
-      containers: [],
-      sensors: [],
+      processes: prev.processes || { total: 0, running: 0, topList: [] },
+      containers: prev.containers || [],
+      sensors: prev.sensors || [],
       lastUpdated: new Date().toISOString()
     };
   }
@@ -181,7 +194,7 @@ export async function fetchGlancesNode(node, auth) {
 /**
  * Fetch all glances nodes concurrently
  */
-export async function fetchAllGlancesNodes(nodes, auth) {
-  const promises = nodes.map(node => fetchGlancesNode(node, auth));
+export async function fetchAllGlancesNodes(nodes, auth, prevNodesMap = new Map()) {
+  const promises = nodes.map(node => fetchGlancesNode(node, auth, prevNodesMap.get(node.id)));
   return await Promise.all(promises);
 }
