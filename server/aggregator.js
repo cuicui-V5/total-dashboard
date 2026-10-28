@@ -188,9 +188,9 @@ async function pollKuma(kumaConfig) {
     if (res && res.monitors?.length > 0) {
       inMemoryStore.kumaData = res;
 
-      // Throttle recording to local SQLite timeseries every 20 seconds
+      // Throttle recording to local SQLite timeseries every 10 seconds
       const now = Date.now();
-      if (now - lastRecordedKumaTime >= 20000) {
+      if (now - lastRecordedKumaTime >= 10000) {
         lastRecordedKumaTime = now;
         recordLatencySnapshot(res.monitors);
       }
@@ -259,10 +259,10 @@ export function startBackgroundPoller() {
     }, intervalMs);
   });
 
-  // Uptime Kuma: 6 seconds interval
+  // Uptime Kuma: 5 seconds interval
   setInterval(() => {
     pollKuma(kumaConfig);
-  }, 6000);
+  }, 5000);
 
   // BandwagonHost: 30 seconds interval (prevents KiwiVM API rate limiting)
   setInterval(() => {

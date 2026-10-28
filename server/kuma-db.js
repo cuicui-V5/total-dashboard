@@ -153,31 +153,38 @@ export function cleanupRetention(maxDays = 30) {
 }
 
 /**
- * Range query configuration
+ * Balanced ~1,000-Point Range Configuration:
+ * - 1h: 原始无损数据展示 (Raw timestamps captured by poller)
+ * - 24h: 1分钟步长 (1,441 点)
+ * - 7d: 10分钟步长 (1,009 点)
+ * - 30d: 30分钟步长 (1,441 点)
  */
 const RANGE_CONFIG = {
   '1h': {
+    isRaw: true,
     durationMs: 3600 * 1000,
-    stepMs: 30 * 1000,
-    stepSec: 30,
-    labelFormat: 'time'
+    stepSec: 0, // raw
+    labelFormat: 'time-sec'
   },
   '24h': {
+    isRaw: false,
     durationMs: 24 * 3600 * 1000,
     stepMs: 60 * 1000,
     stepSec: 60,
     labelFormat: 'time'
   },
   '7d': {
+    isRaw: false,
     durationMs: 7 * 24 * 3600 * 1000,
-    stepMs: 1800 * 1000,
-    stepSec: 1800,
+    stepMs: 600 * 1000, // 10 minutes -> 1,008 points
+    stepSec: 600,
     labelFormat: 'datetime'
   },
   '30d': {
+    isRaw: false,
     durationMs: 30 * 24 * 3600 * 1000,
-    stepMs: 3600 * 1000,
-    stepSec: 3600,
+    stepMs: 1800 * 1000, // 30 minutes -> 1,440 points
+    stepSec: 1800,
     labelFormat: 'datetime'
   }
 };
@@ -187,10 +194,13 @@ function formatTimeLabel(epochMs, formatType) {
   const pad = (n) => String(n).padStart(2, '0');
   const hours = pad(d.getHours());
   const minutes = pad(d.getMinutes());
+  const seconds = pad(d.getSeconds());
   const month = pad(d.getMonth() + 1);
   const day = pad(d.getDate());
 
-  if (formatType === 'time') {
+  if (formatType === 'time-sec') {
+    return `${hours}:${minutes}:${seconds}`;
+  } else if (formatType === 'time') {
     return `${hours}:${minutes}`;
   } else {
     return `${month}-${day} ${hours}:${minutes}`;
@@ -205,9 +215,7 @@ export function queryLatencyHistory(range = '24h') {
   const db = getHistoryDb();
 
   const nowMs = Date.now();
-  const gridEnd = Math.floor(nowMs / cfg.stepMs) * cfg.stepMs;
-  const gridStart = gridEnd - cfg.durationMs;
-  const totalSteps = Math.max(1, Math.round((gridEnd - gridStart) / cfg.stepMs));
+  const startTime = nowMs - cfg.durationMs;
 
   // 1. Get all known monitors in the database
   const distinctMonitors = db.prepare(`
@@ -233,40 +241,12 @@ export function queryLatencyHistory(range = '24h') {
     color: MONITOR_COLORS[m.monitor_name] || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]
   }));
 
-  // 2. Query aggregated buckets from SQLite
-  // High performance GROUP BY on integer bucket
-  const rows = db.prepare(`
-    SELECT 
-      monitor_name,
-      (timestamp / ?) * ? AS bucket,
-      ROUND(AVG(ping), 1) AS avg_ping,
-      MIN(status) AS status,
-      COUNT(*) AS samples
-    FROM kuma_latency_history
-    WHERE timestamp >= ? AND timestamp <= ?
-    GROUP BY monitor_name, bucket
-    ORDER BY bucket ASC
-  `).all(cfg.stepMs, cfg.stepMs, gridStart, gridEnd);
-
-  // Index rows by monitor_name -> bucket -> data
-  const dataMap = new Map();
-  for (const row of rows) {
-    if (!dataMap.has(row.monitor_name)) {
-      dataMap.set(row.monitor_name, new Map());
-    }
-    dataMap.get(row.monitor_name).set(row.bucket, {
-      ping: row.avg_ping,
-      status: row.status
-    });
-  }
-
-  // Pre-calculate initial known ping for each monitor (from nearest historical data)
+  // Pre-calculate initial known state for each monitor
   const lastKnownMap = new Map();
   for (const m of monitorsList) {
     let initialPing = 0;
     let initialStatus = 1;
 
-    // Find the latest record prior to or within gridStart
     const nearest = db.prepare(`
       SELECT ping, status 
       FROM kuma_latency_history 
@@ -283,8 +263,6 @@ export function queryLatencyHistory(range = '24h') {
     lastKnownMap.set(m.name, { ping: initialPing, status: initialStatus });
   }
 
-  // 3. Build uniform timeline with Forward-Fill
-  const timeline = [];
   const monitorStats = new Map();
   monitorsList.forEach(m => {
     monitorStats.set(m.name, {
@@ -296,50 +274,156 @@ export function queryLatencyHistory(range = '24h') {
     });
   });
 
-  for (let step = 0; step <= totalSteps; step++) {
-    const pointTime = gridStart + step * cfg.stepMs;
-    const timeLabel = formatTimeLabel(pointTime, cfg.labelFormat);
+  const timeline = [];
 
-    const point = {
-      time: new Date(pointTime).toISOString(),
-      timestamp: pointTime,
-      label: timeLabel
-    };
+  if (cfg.isRaw) {
+    // ==========================================
+    // 1H MODE: RAW DATA (原始数据展示)
+    // ==========================================
+    const rawRows = db.prepare(`
+      SELECT 
+        timestamp,
+        monitor_name,
+        ping,
+        status
+      FROM kuma_latency_history
+      WHERE timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+    `).all(startTime, nowMs);
 
-    for (const m of monitorsList) {
-      const monData = dataMap.get(m.name);
-      const bucketData = monData ? monData.get(pointTime) : null;
-      const lastState = lastKnownMap.get(m.name);
-
-      let currentPing = lastState.ping;
-      let currentStatus = lastState.status;
-
-      if (bucketData) {
-        if (bucketData.ping > 0) {
-          currentPing = bucketData.ping;
-          lastState.ping = currentPing;
-        }
-        currentStatus = bucketData.status;
-        lastState.status = currentStatus;
+    // Group rows by raw captured timestamp
+    const timestampMap = new Map();
+    for (const row of rawRows) {
+      if (!timestampMap.has(row.timestamp)) {
+        timestampMap.set(row.timestamp, new Map());
       }
-
-      point[m.name] = currentPing;
-      point[`${m.name}_status`] = currentStatus;
-
-      // Update statistics
-      const st = monitorStats.get(m.name);
-      if (st) {
-        st.totalCount++;
-        if (currentStatus === 1) st.upCount++;
-        if (currentPing > 0) {
-          st.pings.push(currentPing);
-          if (currentPing < st.min) st.min = currentPing;
-          if (currentPing > st.max) st.max = currentPing;
-        }
-      }
+      timestampMap.get(row.timestamp).set(row.monitor_name, {
+        ping: row.ping,
+        status: row.status
+      });
     }
 
-    timeline.push(point);
+    const sortedTimes = Array.from(timestampMap.keys()).sort((a, b) => a - b);
+
+    for (const ptTime of sortedTimes) {
+      const monMap = timestampMap.get(ptTime);
+      const timeLabel = formatTimeLabel(ptTime, cfg.labelFormat);
+
+      const point = {
+        time: new Date(ptTime).toISOString(),
+        timestamp: ptTime,
+        label: timeLabel
+      };
+
+      for (const m of monitorsList) {
+        const item = monMap ? monMap.get(m.name) : null;
+        const lastState = lastKnownMap.get(m.name);
+
+        let currentPing = lastState.ping;
+        let currentStatus = lastState.status;
+
+        if (item) {
+          if (item.ping > 0) {
+            currentPing = item.ping;
+            lastState.ping = currentPing;
+          }
+          currentStatus = item.status;
+          lastState.status = currentStatus;
+        }
+
+        point[m.name] = currentPing;
+        point[`${m.name}_status`] = currentStatus;
+
+        const st = monitorStats.get(m.name);
+        if (st) {
+          st.totalCount++;
+          if (currentStatus === 1) st.upCount++;
+          if (currentPing > 0) {
+            st.pings.push(currentPing);
+            if (currentPing < st.min) st.min = currentPing;
+            if (currentPing > st.max) st.max = currentPing;
+          }
+        }
+      }
+
+      timeline.push(point);
+    }
+  } else {
+    // ==========================================
+    // 24H / 7D / 30D MODE: UNIFORM ~1,000-POINT BUCKETED AGGREGATION
+    // ==========================================
+    const gridEnd = Math.floor(nowMs / cfg.stepMs) * cfg.stepMs;
+    const gridStart = gridEnd - cfg.durationMs;
+    const totalSteps = Math.max(1, Math.round((gridEnd - gridStart) / cfg.stepMs));
+
+    const rows = db.prepare(`
+      SELECT 
+        monitor_name,
+        (timestamp / ?) * ? AS bucket,
+        ROUND(AVG(ping), 1) AS avg_ping,
+        MIN(status) AS status,
+        COUNT(*) AS samples
+      FROM kuma_latency_history
+      WHERE timestamp >= ? AND timestamp <= ?
+      GROUP BY monitor_name, bucket
+      ORDER BY bucket ASC
+    `).all(cfg.stepMs, cfg.stepMs, gridStart, gridEnd);
+
+    const dataMap = new Map();
+    for (const row of rows) {
+      if (!dataMap.has(row.monitor_name)) {
+        dataMap.set(row.monitor_name, new Map());
+      }
+      dataMap.get(row.monitor_name).set(row.bucket, {
+        ping: row.avg_ping,
+        status: row.status
+      });
+    }
+
+    for (let step = 0; step <= totalSteps; step++) {
+      const pointTime = gridStart + step * cfg.stepMs;
+      const timeLabel = formatTimeLabel(pointTime, cfg.labelFormat);
+
+      const point = {
+        time: new Date(pointTime).toISOString(),
+        timestamp: pointTime,
+        label: timeLabel
+      };
+
+      for (const m of monitorsList) {
+        const monData = dataMap.get(m.name);
+        const bucketData = monData ? monData.get(pointTime) : null;
+        const lastState = lastKnownMap.get(m.name);
+
+        let currentPing = lastState.ping;
+        let currentStatus = lastState.status;
+
+        if (bucketData) {
+          if (bucketData.ping > 0) {
+            currentPing = bucketData.ping;
+            lastState.ping = currentPing;
+          }
+          currentStatus = bucketData.status;
+          lastState.status = currentStatus;
+        }
+
+        point[m.name] = currentPing;
+        point[`${m.name}_status`] = currentStatus;
+
+        const st = monitorStats.get(m.name);
+        if (st) {
+          st.totalCount++;
+          if (currentStatus === 1) st.upCount++;
+          if (currentPing > 0) {
+            st.pings.push(currentPing);
+            if (currentPing < st.min) st.min = currentPing;
+            if (currentPing > st.max) st.max = currentPing;
+          }
+        }
+      }
+
+      timeline.push(point);
+    }
   }
 
   // 4. Summarize stats for monitors
@@ -371,6 +455,7 @@ export function queryLatencyHistory(range = '24h') {
   return {
     range,
     stepSec: cfg.stepSec,
+    isRaw: cfg.isRaw,
     source: 'local-sqlite',
     monitors: finalizedMonitors,
     timeline,

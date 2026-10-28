@@ -184,10 +184,10 @@ export default function KumaChartsPage({ kuma }) {
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(ratio => Math.round(maxY * ratio));
 
   const timeRanges = [
-    { id: '1h', label: '最近 1 小时', desc: '30秒高密采样' },
-    { id: '24h', label: '过去 24 小时', desc: '1分钟高密采样' },
-    { id: '7d', label: '过去 7 天', desc: '半小时采样' },
-    { id: '30d', label: '过去 30 天', desc: '1小时宏观分析' },
+    { id: '1h', label: '最近 1 小时', desc: '原始秒级无损采样' },
+    { id: '24h', label: '过去 24 小时', desc: '1分钟高密 (~1440点)' },
+    { id: '7d', label: '过去 7 天', desc: '10分钟高密 (~1000点)' },
+    { id: '30d', label: '过去 30 天', desc: '半小时高密 (~1440点)' },
   ];
 
   return (
@@ -310,11 +310,9 @@ export default function KumaChartsPage({ kuma }) {
             <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
               <Activity className="h-4 w-4 text-sky-600" />
               <span>全链路延迟趋势对比 ({selectedRange.toUpperCase()} 周期 · 采样 {timeline.length} 点)</span>
-              {rangeData?.stepSec && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-normal">
-                  {rangeData.stepSec >= 60 ? `${Math.round(rangeData.stepSec / 60)}m` : `${rangeData.stepSec}s`}/点
-                </span>
-              )}
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-normal">
+                {rangeData?.isRaw ? '原始数据' : (rangeData?.stepSec ? `${rangeData.stepSec >= 60 ? Math.round(rangeData.stepSec / 60) + 'm' : rangeData.stepSec + 's'}/点` : '')}
+              </span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
               高密度网格对齐，全链路连续追踪，点击下方标签可显示/隐藏特定链路，悬浮可精准查看各采样点详细延迟数值
