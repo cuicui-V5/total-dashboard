@@ -8,7 +8,8 @@ import {
   ShieldCheck, 
   HardDriveDownload,
   Wifi,
-  Sparkles
+  Sparkles,
+  TrendingUp
 } from 'lucide-react';
 
 export default function Header({ 
@@ -29,7 +30,8 @@ export default function Header({
   const tabs = [
     { id: 'all', label: '综合总览', icon: Layers },
     { id: 'nodes', label: `设备节点 (${totalNodes})`, icon: Server },
-    { id: 'kuma', label: '链路监控', icon: Activity },
+    { id: 'kuma', label: '链路状态', icon: Activity },
+    { id: 'kuma-charts', label: '延迟图表', icon: TrendingUp },
     { id: 'bwh', label: 'VPS 流量', icon: HardDriveDownload },
   ];
 

@@ -5,6 +5,7 @@ import SummaryCards from './components/SummaryCards';
 import NodeCard from './components/NodeCard';
 import NodeDetailModal from './components/NodeDetailModal';
 import KumaSection from './components/KumaSection';
+import KumaChartsPage from './components/KumaChartsPage';
 import BwhSection from './components/BwhSection';
 import AlertBanner from './components/AlertBanner';
 import { 
@@ -203,6 +204,13 @@ export default function App() {
                     ...fleetData.kuma,
                     monitors: filteredMonitors
                   }} />
+                </section>
+              )}
+
+              {/* TAB CONTENT: DEDICATED KUMA CHARTS */}
+              {activeTab === 'kuma-charts' && (
+                <section>
+                  <KumaChartsPage kuma={fleetData.kuma} />
                 </section>
               )}
 
