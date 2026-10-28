@@ -7,8 +7,6 @@ services:
     restart: unless-stopped
     ports:
       - "3344:3344"
-    volumes:
-      - /etc/uptime-kuma/kuma.db:/data/kuma.db:ro
     env_file:
       - .env
     healthcheck:

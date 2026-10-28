@@ -44,11 +44,11 @@ app.get('/api/fleet', async (req, res) => {
 app.get('/api/kuma/history', async (req, res) => {
   try {
     const range = req.query.range || '24h';
-    const data = queryKumaHistory(range);
+    const data = await queryKumaHistory(range);
     if (data && data.timeline?.length > 0) {
       return res.json(data);
     }
-    // Fallback if sqlite direct query unavailable
+    // Fallback if history query unavailable
     const fleet = await getAggregatedFleetData();
     res.json({
       range,

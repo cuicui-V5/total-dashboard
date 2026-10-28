@@ -22,7 +22,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3344
-ENV UPTIME_KUMA_DB_PATH=/data/kuma.db
 
 # Copy package definitions and install only production dependencies
 COPY package*.json ./

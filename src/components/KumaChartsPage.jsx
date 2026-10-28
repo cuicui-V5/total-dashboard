@@ -184,10 +184,10 @@ export default function KumaChartsPage({ kuma }) {
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(ratio => Math.round(maxY * ratio));
 
   const timeRanges = [
-    { id: '1h', label: '最近 1 小时', desc: '秒级心跳采样' },
-    { id: '24h', label: '过去 24 小时', desc: '逐小时聚合' },
-    { id: '7d', label: '过去 7 天', desc: '4小时粒度趋势' },
-    { id: '30d', label: '过去 30 天', desc: '天级宏观分析' },
+    { id: '1h', label: '最近 1 小时', desc: '30秒高密采样' },
+    { id: '24h', label: '过去 24 小时', desc: '1分钟高密采样' },
+    { id: '7d', label: '过去 7 天', desc: '半小时采样' },
+    { id: '30d', label: '过去 30 天', desc: '1小时宏观分析' },
   ];
 
   return (
@@ -309,10 +309,15 @@ export default function KumaChartsPage({ kuma }) {
           <div>
             <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
               <Activity className="h-4 w-4 text-sky-600" />
-              <span>全链路延迟趋势对比 ({selectedRange.toUpperCase()} 周期，采样 {timeline.length} 点)</span>
+              <span>全链路延迟趋势对比 ({selectedRange.toUpperCase()} 周期 · 采样 {timeline.length} 点)</span>
+              {rangeData?.stepSec && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-normal">
+                  {rangeData.stepSec >= 60 ? `${Math.round(rangeData.stepSec / 60)}m` : `${rangeData.stepSec}s`}/点
+                </span>
+              )}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              点击下方标签可显示/隐藏特定链路，悬浮可精准查看各采样点详细延迟数值
+              高密度网格对齐，全链路连续追踪，点击下方标签可显示/隐藏特定链路，悬浮可精准查看各采样点详细延迟数值
             </p>
           </div>
 
@@ -502,24 +507,33 @@ export default function KumaChartsPage({ kuma }) {
           {/* Interactive Floating Tooltip */}
           {hoverIndex !== null && timeline[hoverIndex] && (
             <div 
-              className="absolute top-4 right-4 bg-white/95 backdrop-blur-md rounded-xl p-3 shadow-lg border border-slate-200 text-xs font-mono pointer-events-none z-10 animate-in fade-in zoom-in-95 duration-100 min-w-[200px]"
+              className="absolute top-4 right-4 bg-white/95 backdrop-blur-md rounded-xl p-3.5 shadow-xl border border-slate-200/90 text-xs font-mono pointer-events-none z-10 animate-in fade-in zoom-in-95 duration-100 min-w-[220px]"
             >
-              <div className="font-semibold text-slate-700 pb-1.5 border-b border-slate-100 mb-1.5 flex items-center justify-between">
+              <div className="font-semibold text-slate-700 pb-1.5 border-b border-slate-100 mb-2 flex items-center justify-between">
                 <span>采样时间</span>
-                <span className="text-slate-500 font-normal">{timeline[hoverIndex].time}</span>
+                <span className="text-slate-500 font-normal">
+                  {timeline[hoverIndex].timestamp
+                    ? new Date(timeline[hoverIndex].timestamp).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' +
+                      new Date(timeline[hoverIndex].timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+                    : (timeline[hoverIndex].time || '--')}
+                </span>
               </div>
-              <div className="space-y-1">
-                {monitors.filter(m => visibleMonitors[m.name]).map(m => (
-                  <div key={m.name} className="flex items-center justify-between">
-                    <span className="flex items-center space-x-1.5 text-slate-600">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} />
-                      <span>{m.name}</span>
-                    </span>
-                    <strong className="text-slate-800">
-                      {timeline[hoverIndex][m.name] ?? '--'} ms
-                    </strong>
-                  </div>
-                ))}
+              <div className="space-y-1.5">
+                {monitors.filter(m => visibleMonitors[m.name]).map(m => {
+                  const val = timeline[hoverIndex][m.name];
+                  const isDown = timeline[hoverIndex][`${m.name}_status`] === 0;
+                  return (
+                    <div key={m.name} className="flex items-center justify-between">
+                      <span className="flex items-center space-x-1.5 text-slate-600">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} />
+                        <span>{m.name}</span>
+                      </span>
+                      <strong className={isDown ? "text-rose-600" : "text-slate-800"}>
+                        {isDown ? "Down" : (typeof val === 'number' ? `${val} ms` : '-- ms')}
+                      </strong>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
