@@ -34,13 +34,15 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(60000); // 60s (1 min) interval
+  const hasFleetDataRef = React.useRef(false);
 
   const fetchFleet = useCallback(async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
       const url = isManual ? '/api/fleet?force=true' : '/api/fleet';
-      const res = await axios.get(url, { timeout: 5000 });
+      const res = await axios.get(url, { timeout: 8000 });
       setFleetData(res.data);
+      hasFleetDataRef.current = true;
       setError(null);
       
       // Save snapshot for next instant startup
@@ -52,14 +54,14 @@ export default function App() {
     } catch (err) {
       console.warn('Failed to fetch fleet metrics:', err);
       // Only set blocking error if we have no prior data
-      if (!fleetData) {
+      if (!hasFleetDataRef.current) {
         setError('正在连接后台监控引擎，请稍候...');
       }
     } finally {
       setLoading(false);
       if (isManual) setIsRefreshing(false);
     }
-  }, [fleetData]);
+  }, []);
 
   // Initial load
   useEffect(() => {
