@@ -144,48 +144,69 @@ export default function NodeCard({ node, onOpenDetails }) {
             </div>
           </div>
 
-          {/* Primary Disk Metric */}
-          <div>
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span className="flex items-center text-slate-500 font-medium space-x-1.5">
-                <HardDrive className="h-3.5 w-3.5 text-slate-400" />
-                <span>磁盘空间 ({primaryDisk.mount})</span>
-              </span>
-              <span className={`font-mono font-semibold ${isOnline ? diskColor.text : 'text-slate-500'}`}>
-                {diskPercent}%
-              </span>
+          {/* Disk or Swap Metric */}
+          {primaryDisk && primaryDisk.totalBytes > 0 ? (
+            <div>
+              <div className="flex justify-between items-center text-xs mb-1">
+                <span className="flex items-center text-slate-500 font-medium space-x-1.5">
+                  <HardDrive className="h-3.5 w-3.5 text-slate-400" />
+                  <span>磁盘空间 ({primaryDisk.mount})</span>
+                </span>
+                <span className={`font-mono font-semibold ${isOnline ? diskColor.text : 'text-slate-500'}`}>
+                  {diskPercent}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-300 ${isOnline ? diskColor.bg : 'bg-slate-300'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, diskPercent))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
+                <span>已用: {formatBytes(primaryDisk.usedBytes)}</span>
+                <span>总量: {formatBytes(primaryDisk.totalBytes)}</span>
+              </div>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-              <div 
-                className={`h-full rounded-full transition-all duration-300 ${isOnline ? diskColor.bg : 'bg-slate-300'}`}
-                style={{ width: `${Math.min(100, Math.max(0, diskPercent))}%` }}
-              />
+          ) : (
+            <div>
+              <div className="flex justify-between items-center text-xs mb-1">
+                <span className="flex items-center text-slate-500 font-medium space-x-1.5">
+                  <HardDrive className="h-3.5 w-3.5 text-slate-400" />
+                  <span>Swap 交换分区</span>
+                </span>
+                <span className={`font-mono font-semibold ${isOnline ? getPercentColor(node.swap?.percent || 0).text : 'text-slate-500'}`}>
+                  {node.swap?.percent || 0}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-300 ${isOnline ? getPercentColor(node.swap?.percent || 0).bg : 'bg-slate-300'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, node.swap?.percent || 0))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
+                <span className="truncate max-w-[170px]">{node.cpu?.name || 'CPU'}</span>
+                <span>{node.cpu?.logicalCores || 1} 逻辑核心</span>
+              </div>
             </div>
-            <div className="flex justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
-              <span>已用: {formatBytes(primaryDisk.usedBytes)}</span>
-              <span>总量: {formatBytes(primaryDisk.totalBytes)}</span>
-            </div>
-          </div>
+          )}
 
-          {/* Real-time Network Speed & Containers Badge */}
+          {/* Quick Stats Footnote */}
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <div className="flex items-center space-x-3 text-[11px] font-mono text-slate-600">
-              <span className="flex items-center space-x-0.5 text-emerald-600">
-                <ArrowDown className="h-3 w-3" />
-                <span>{formatSpeed(node.network?.totalRxRate)}</span>
+              <span className="text-slate-500">
+                系统负载: <strong className="text-slate-700 font-semibold">{node.cpu?.loadAvg?.[0] || '0.0'}</strong>
               </span>
-              <span className="flex items-center space-x-0.5 text-sky-600">
-                <ArrowUp className="h-3 w-3" />
-                <span>{formatSpeed(node.network?.totalTxRate)}</span>
-              </span>
+              {node.cpu?.frequencyMhz && (
+                <span className="text-slate-400">
+                  {node.cpu.frequencyMhz} MHz
+                </span>
+              )}
             </div>
 
-            {node.containers?.length > 0 && (
-              <span className="inline-flex items-center space-x-1 text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
-                <Box className="h-3 w-3 text-slate-500" />
-                <span>{node.containers.length} 容器</span>
-              </span>
-            )}
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+              Quicklook
+            </span>
           </div>
         </div>
       </div>

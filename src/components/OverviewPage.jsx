@@ -56,7 +56,7 @@ export default function OverviewPage({
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                实时聚合 PC、PVE 宿主及海外多地域 VPS 主机的核心资源负载
+                实时聚合 PVE 宿主及海外多地域 VPS 主机的轻量核心资源负载
               </p>
             </div>
           </div>
@@ -70,8 +70,8 @@ export default function OverviewPage({
           </button>
         </div>
 
-        {/* 6 Nodes Compact Grid Matrix */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* 5 Nodes Compact Grid Matrix */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {nodes.map(node => {
             const cpuColor = getPercentColor(node.cpu?.percent || 0);
             const memColor = getPercentColor(node.memory?.percent || 0);
@@ -147,12 +147,12 @@ export default function OverviewPage({
                   )}
                 </div>
 
-                {/* Bottom Traffic Footnote */}
+                {/* Bottom Footnote */}
                 {isOnline && (
                   <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-400">
                     <span className="truncate">{node.system?.hostname || node.label}</span>
                     <span className="text-slate-500">
-                      ↓{formatSpeed(node.network?.totalRxRate)} • ↑{formatSpeed(node.network?.totalTxRate)}
+                      {node.cpu?.logicalCores ? `${node.cpu.logicalCores}核 • ` : ''}Load: {node.cpu?.loadAvg?.[0] || '0'}
                     </span>
                   </div>
                 )}

@@ -60,7 +60,7 @@ export default function Header({
                 </div>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                六台设备监控 • Uptime Kuma 链路 • 搬瓦工流量配额
+                五台设备监控 • Uptime Kuma 链路 • 搬瓦工流量配额
               </p>
             </div>
           </div>
@@ -87,9 +87,9 @@ export default function Header({
               className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none hover:border-slate-300 focus:border-sky-500 transition-colors cursor-pointer shadow-xs"
               title="自动刷新周期"
             >
-              <option value={5000}>5 秒刷新</option>
-              <option value={10000}>10 秒刷新</option>
+              <option value={60000}>1 分钟刷新</option>
               <option value={30000}>30 秒刷新</option>
+              <option value={10000}>10 秒刷新</option>
               <option value={0}>暂停自动刷新</option>
             </select>
 

@@ -250,13 +250,11 @@ export function startBackgroundPoller() {
   pollBwh(bwhInstances);
 
   // Set up independent polling intervals:
-  // LAN nodes: 5 seconds interval
-  // Cloud/VPS nodes: 8 seconds interval
+  // Glances nodes: 60 seconds interval (1 minute) for lightweight quicklook monitoring
   glancesNodes.forEach(node => {
-    const intervalMs = node.tag === 'LAN' ? 5000 : 8000;
     setInterval(() => {
       pollSingleGlancesNode(node, glancesAuth);
-    }, intervalMs);
+    }, 60000);
   });
 
   // Uptime Kuma: 5 seconds interval

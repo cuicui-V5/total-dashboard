@@ -33,7 +33,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(6000); // 6s fast interval, non-blocking
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(60000); // 60s (1 min) interval
 
   const fetchFleet = useCallback(async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
