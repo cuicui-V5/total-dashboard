@@ -1,12 +1,4 @@
 import axios from 'axios';
-import http from 'http';
-
-// Reusable HTTP Keep-Alive Agent to eliminate TCP handshake overhead on high-latency routes
-const httpAgent = new http.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 60000,
-  maxSockets: 25
-});
 
 /**
  * Fetch and normalize data from a single Glances node using pure lightweight quicklook API (~580 bytes)
@@ -18,7 +10,7 @@ export async function fetchGlancesNode(node, auth, previousNodeData = null) {
 
   // Cloud VPS nodes traverse transpacific routes with higher latency
   const isCloudNode = node.id?.includes('oracle') || node.id?.includes('bwh') || node.tag?.includes('VPS');
-  const timeoutMs = isCloudNode ? 12000 : 5000;
+  const timeoutMs = isCloudNode ? 16000 : 5000;
 
   try {
     const response = await axios.get(`${node.url}/api/4/quicklook`, {
@@ -26,7 +18,6 @@ export async function fetchGlancesNode(node, auth, previousNodeData = null) {
         'Authorization': basicAuthHeader,
         'Accept': 'application/json'
       },
-      httpAgent,
       timeout: timeoutMs
     });
 
@@ -155,8 +146,8 @@ export async function fetchGlancesNodeFullDetail(node, auth, force = false) {
   const startTime = Date.now();
   const basicAuthHeader = 'Basic ' + Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
   const isCloudNode = node.id?.includes('oracle') || node.id?.includes('bwh') || node.tag?.includes('VPS');
-  // Full details on high-loss transpacific routes can take up to 25s
-  const timeoutMs = isCloudNode ? 25000 : 12000;
+  // Full details on high-loss transpacific routes can take up to 28s
+  const timeoutMs = isCloudNode ? 28000 : 12000;
 
   try {
     const response = await axios.get(`${node.url}/api/4/all`, {
@@ -164,7 +155,6 @@ export async function fetchGlancesNodeFullDetail(node, auth, force = false) {
         'Authorization': basicAuthHeader,
         'Accept': 'application/json'
       },
-      httpAgent,
       timeout: timeoutMs
     });
 
