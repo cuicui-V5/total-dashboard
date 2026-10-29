@@ -243,7 +243,6 @@ export async function fetchGlancesNode(node, auth, previousNodeData = null) {
     lastUpdated: new Date().toISOString()
   };
 }
-}
 
 /**
  * Fetch all glances nodes concurrently
