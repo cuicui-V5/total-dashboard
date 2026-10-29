@@ -204,8 +204,8 @@ export default function NodeCard({ node, onOpenDetails }) {
               )}
             </div>
 
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-              Quicklook
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-medium">
+              轻量快照
             </span>
           </div>
         </div>
@@ -213,16 +213,16 @@ export default function NodeCard({ node, onOpenDetails }) {
 
       {/* Footer Info & Action */}
       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center space-x-1 truncate max-w-[170px]" title={`运行时间: ${node.system?.uptime}`}>
+        <div className="flex items-center space-x-1 truncate max-w-[150px]" title={`运行时间: ${node.system?.uptime}`}>
           <Clock className="h-3 w-3 shrink-0" />
           <span className="truncate text-[11px]">{node.system?.uptime || (isOnline ? '正常' : '重连中')}</span>
         </div>
 
         <button
           onClick={() => onOpenDetails(node)}
-          className="inline-flex items-center space-x-1 text-sky-600 hover:text-sky-700 text-xs font-medium hover:underline cursor-pointer group"
+          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-sky-50/80 hover:bg-sky-100 text-sky-700 text-xs font-semibold transition-all shadow-xs group border border-sky-200/70"
         >
-          <span>详情面板</span>
+          <span>查看完整详情</span>
           <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </button>
       </div>

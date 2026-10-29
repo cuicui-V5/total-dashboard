@@ -147,12 +147,15 @@ export default function OverviewPage({
                   )}
                 </div>
 
-                {/* Bottom Footnote */}
+                {/* Bottom Footnote & Action */}
                 {isOnline && (
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                    <span className="truncate">{node.system?.hostname || node.label}</span>
-                    <span className="text-slate-500">
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400 truncate max-w-[110px]">
                       {node.cpu?.logicalCores ? `${node.cpu.logicalCores}核 • ` : ''}Load: {node.cpu?.loadAvg?.[0] || '0'}
+                    </span>
+                    <span className="text-sky-600 font-semibold flex items-center space-x-0.5 group-hover:translate-x-0.5 transition-transform">
+                      <span>全量详情</span>
+                      <span>→</span>
                     </span>
                   </div>
                 )}

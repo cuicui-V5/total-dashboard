@@ -1,4 +1,4 @@
-import { fetchGlancesNode } from './glances.js';
+import { fetchGlancesNode, fetchGlancesNodeFullDetail } from './glances.js';
 import { fetchUptimeKumaMetrics } from './kuma.js';
 import { fetchAllBwhInstances } from './bwh.js';
 import { getHistoryDb, recordLatencySnapshot, seedFromOfficialKuma, cleanupRetention } from './kuma-db.js';
@@ -101,6 +101,10 @@ function buildFleetSnapshot() {
   const totalBwhUsed = bwh.reduce((acc, b) => acc + (b.bandwidth?.usedBytes || 0), 0);
   const bwhUsagePercent = totalBwhMonthly > 0 ? Number(((totalBwhUsed / totalBwhMonthly) * 100).toFixed(1)) : 0;
 
+  // Active Kuma monitors average latency
+  const validPings = (kuma.monitors || []).filter(m => typeof m.pingMs === 'number' && m.pingMs > 0).map(m => m.pingMs);
+  const avgPingMs = validPings.length > 0 ? Number((validPings.reduce((a, b) => a + b, 0) / validPings.length).toFixed(1)) : 0;
+
   const alerts = [];
   nodes.forEach(node => {
     if (!node.online) {
@@ -140,6 +144,7 @@ function buildFleetSnapshot() {
       fleetMetrics: {
         avgCpuPercent: avgCpu,
         avgMemoryPercent: avgMemory,
+        avgPingMs,
         totalRxSpeedBytes: totalNetworkRx,
         totalTxSpeedBytes: totalNetworkTx,
         bwhMonthlyBytes: totalBwhMonthly,
@@ -282,4 +287,14 @@ export async function getAggregatedFleetData(forceRefresh = false) {
 
   // Return the in-memory state snapshot immediately!
   return buildFleetSnapshot();
+}
+
+/**
+ * On-demand full detail handler for a single node
+ */
+export async function getNodeFullDetail(nodeId, force = false) {
+  const { glancesNodes, glancesAuth } = getFleetConfig();
+  const node = glancesNodes.find(n => n.id === nodeId);
+  if (!node) return null;
+  return await fetchGlancesNodeFullDetail(node, glancesAuth, force);
 }

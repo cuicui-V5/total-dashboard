@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAggregatedFleetData, startBackgroundPoller } from './aggregator.js';
+import { getAggregatedFleetData, getNodeFullDetail, startBackgroundPoller } from './aggregator.js';
 import { queryLatencyHistory } from './kuma-db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +36,22 @@ app.get('/api/fleet', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Fleet API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// On-demand full detail endpoint for a single node (fetched ONLY on user request)
+app.get('/api/fleet/node/:nodeId/full', async (req, res) => {
+  try {
+    const { nodeId } = req.params;
+    const force = req.query.force === 'true';
+    const detail = await getNodeFullDetail(nodeId, force);
+    if (!detail) {
+      return res.status(404).json({ error: `未找到节点配置: ${nodeId}` });
+    }
+    res.json(detail);
+  } catch (error) {
+    console.error(`Full detail API error for ${req.params.nodeId}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
