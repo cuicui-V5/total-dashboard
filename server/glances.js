@@ -18,7 +18,7 @@ export async function fetchGlancesNode(node, auth, previousNodeData = null) {
 
   // Cloud VPS nodes traverse transpacific routes with higher latency
   const isCloudNode = node.id?.includes('oracle') || node.id?.includes('bwh') || node.tag?.includes('VPS');
-  const timeoutMs = isCloudNode ? 8000 : 4000;
+  const timeoutMs = isCloudNode ? 12000 : 5000;
 
   try {
     const response = await axios.get(`${node.url}/api/4/quicklook`, {
