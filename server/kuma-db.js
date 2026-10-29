@@ -242,18 +242,29 @@ export function queryLatencyHistory(range = '24h') {
   }));
 
   // Pre-calculate initial known state for each monitor
+  // Look for the closest known ping at or before startTime, or fallback to earliest recorded ping
   const lastKnownMap = new Map();
   for (const m of monitorsList) {
     let initialPing = 0;
     let initialStatus = 1;
 
-    const nearest = db.prepare(`
+    let nearest = db.prepare(`
       SELECT ping, status 
       FROM kuma_latency_history 
-      WHERE monitor_name = ? AND ping > 0
+      WHERE monitor_name = ? AND ping > 0 AND timestamp <= ?
       ORDER BY timestamp DESC 
       LIMIT 1
-    `).get(m.name);
+    `).get(m.name, startTime);
+
+    if (!nearest) {
+      nearest = db.prepare(`
+        SELECT ping, status 
+        FROM kuma_latency_history 
+        WHERE monitor_name = ? AND ping > 0
+        ORDER BY timestamp ASC 
+        LIMIT 1
+      `).get(m.name);
+    }
 
     if (nearest) {
       initialPing = nearest.ping;
@@ -329,21 +340,21 @@ export function queryLatencyHistory(range = '24h') {
           }
           currentStatus = item.status;
           lastState.status = currentStatus;
+
+          const st = monitorStats.get(m.name);
+          if (st) {
+            st.totalCount++;
+            if (currentStatus === 1) st.upCount++;
+            if (currentPing > 0) {
+              st.pings.push(currentPing);
+              if (currentPing < st.min) st.min = currentPing;
+              if (currentPing > st.max) st.max = currentPing;
+            }
+          }
         }
 
         point[m.name] = currentPing;
         point[`${m.name}_status`] = currentStatus;
-
-        const st = monitorStats.get(m.name);
-        if (st) {
-          st.totalCount++;
-          if (currentStatus === 1) st.upCount++;
-          if (currentPing > 0) {
-            st.pings.push(currentPing);
-            if (currentPing < st.min) st.min = currentPing;
-            if (currentPing > st.max) st.max = currentPing;
-          }
-        }
       }
 
       timeline.push(point);
@@ -356,10 +367,11 @@ export function queryLatencyHistory(range = '24h') {
     const gridStart = gridEnd - cfg.durationMs;
     const totalSteps = Math.max(1, Math.round((gridEnd - gridStart) / cfg.stepMs));
 
+    // NOTE: Explicit CAST(? AS INTEGER) ensures integer division in SQLite when bound via JS drivers
     const rows = db.prepare(`
       SELECT 
         monitor_name,
-        (timestamp / ?) * ? AS bucket,
+        (timestamp / CAST(? AS INTEGER)) * CAST(? AS INTEGER) AS bucket,
         ROUND(AVG(ping), 1) AS avg_ping,
         MIN(status) AS status,
         COUNT(*) AS samples
@@ -376,7 +388,8 @@ export function queryLatencyHistory(range = '24h') {
       }
       dataMap.get(row.monitor_name).set(row.bucket, {
         ping: row.avg_ping,
-        status: row.status
+        status: row.status,
+        samples: row.samples
       });
     }
 
@@ -405,21 +418,21 @@ export function queryLatencyHistory(range = '24h') {
           }
           currentStatus = bucketData.status;
           lastState.status = currentStatus;
+
+          const st = monitorStats.get(m.name);
+          if (st) {
+            st.totalCount += (bucketData.samples || 1);
+            if (currentStatus === 1) st.upCount += (bucketData.samples || 1);
+            if (currentPing > 0) {
+              st.pings.push(currentPing);
+              if (currentPing < st.min) st.min = currentPing;
+              if (currentPing > st.max) st.max = currentPing;
+            }
+          }
         }
 
         point[m.name] = currentPing;
         point[`${m.name}_status`] = currentStatus;
-
-        const st = monitorStats.get(m.name);
-        if (st) {
-          st.totalCount++;
-          if (currentStatus === 1) st.upCount++;
-          if (currentPing > 0) {
-            st.pings.push(currentPing);
-            if (currentPing < st.min) st.min = currentPing;
-            if (currentPing > st.max) st.max = currentPing;
-          }
-        }
       }
 
       timeline.push(point);
@@ -430,9 +443,9 @@ export function queryLatencyHistory(range = '24h') {
   const finalizedMonitors = monitorsList.map(m => {
     const st = monitorStats.get(m.name);
     const count = st?.pings?.length || 0;
-    const avg = count > 0 ? Number((st.pings.reduce((a, b) => a + b, 0) / count).toFixed(1)) : 0;
-    const min = count > 0 && st.min !== Infinity ? st.min : 0;
-    const max = count > 0 ? st.max : 0;
+    const avg = count > 0 ? Number((st.pings.reduce((a, b) => a + b, 0) / count).toFixed(1)) : (lastKnownMap.get(m.name)?.ping || 0);
+    const min = count > 0 && st.min !== Infinity ? st.min : avg;
+    const max = count > 0 ? st.max : avg;
     const uptime = st?.totalCount > 0 ? Number(((st.upCount / st.totalCount) * 100).toFixed(2)) : 100;
 
     const variance = count > 0 ? st.pings.reduce((acc, p) => acc + Math.pow(p - avg, 2), 0) / count : 0;
