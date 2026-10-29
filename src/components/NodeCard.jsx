@@ -112,7 +112,9 @@ export default function NodeCard({ node, onOpenDetails }) {
               />
             </div>
             <div className="flex justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
-              <span>Load: {node.cpu?.loadAvg?.join(', ') || '0, 0, 0'}</span>
+              <span>
+                Load: {node.cpu?.loadAvg?.[1] ? node.cpu.loadAvg.join(', ') : (node.cpu?.loadAvg?.[0] || '0.0')}
+              </span>
               {node.cpu?.frequencyMhz ? (
                 <span>{node.cpu.frequencyMhz} MHz</span>
               ) : (
@@ -139,8 +141,17 @@ export default function NodeCard({ node, onOpenDetails }) {
               />
             </div>
             <div className="flex justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
-              <span>已用: {formatBytes(node.memory?.usedBytes)}</span>
-              <span>总量: {formatBytes(node.memory?.totalBytes)}</span>
+              {node.memory?.totalBytes > 0 ? (
+                <>
+                  <span>已用: {formatBytes(node.memory?.usedBytes)}</span>
+                  <span>总量: {formatBytes(node.memory?.totalBytes)}</span>
+                </>
+              ) : (
+                <>
+                  <span>RAM 实时占用: {memPercent}%</span>
+                  <span className="text-slate-400">详细容量点击全量</span>
+                </>
+              )}
             </div>
           </div>
 
