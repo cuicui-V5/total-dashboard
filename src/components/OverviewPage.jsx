@@ -373,7 +373,7 @@ export default function OverviewPage({
                     <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap shrink-0">
                       {bw.daysUntilReset !== null && bw.daysUntilReset !== undefined 
                         ? `${bw.daysUntilReset} 天后重置` 
-                        : (bw.nextResetDate ? new Date(bw.nextResetDate).toLocaleDateString() : '本月周期')}
+                        : (bw.nextResetDate ? new Date(bw.nextResetDate).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '本月周期')}
                     </span>
                   </div>
 

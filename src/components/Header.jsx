@@ -29,7 +29,7 @@ export default function Header({
 
   const tabs = [
     { id: 'overview', label: '综合概览', icon: Layers },
-    { id: 'nodes', label: `设备节点 (${totalNodes})`, icon: Server },
+    { id: 'nodes', label: '设备节点', badge: totalNodes, icon: Server },
     { id: 'kuma', label: '网络链路', icon: Activity },
     { id: 'kuma-charts', label: '时序图表', icon: TrendingUp },
     { id: 'bwh', label: 'VPS 流量', icon: HardDriveDownload },
@@ -107,9 +107,9 @@ export default function Header({
         </div>
 
         {/* Animated Navigation Tabs Bar */}
-        <div className="mt-4 flex items-center justify-between border-t border-slate-200/60 pt-3">
+        <div className="mt-4 flex items-center justify-between border-t border-slate-200/60 pt-3.5">
           
-          <nav className="flex items-center space-x-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shadow-inner overflow-x-auto scrollbar-none max-w-full">
+          <nav className="flex items-center space-x-1 sm:space-x-1.5 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 shadow-inner overflow-x-auto overflow-y-hidden no-scrollbar max-w-full">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -118,25 +118,32 @@ export default function Header({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`relative flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ease-out whitespace-nowrap active:scale-95 ${
+                  className={`relative flex items-center space-x-2 sm:space-x-2.5 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ease-out whitespace-nowrap active:scale-[0.98] ${
                     isActive
-                      ? 'bg-white text-sky-700 shadow-sm font-bold scale-[1.02]'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      ? 'bg-white text-sky-700 shadow-md shadow-slate-200/80 font-bold border border-slate-200/60 scale-[1.01]'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
                   }`}
                 >
-                  <Icon className={`h-3.5 w-3.5 transition-transform duration-200 ${isActive ? 'scale-110 text-sky-600' : 'text-slate-400'}`} />
+                  <Icon className={`h-4 w-4 sm:h-4.5 sm:w-4.5 transition-transform duration-200 ${isActive ? 'scale-110 text-sky-600' : 'text-slate-400'}`} />
                   <span>{tab.label}</span>
+                  {tab.badge !== undefined && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold transition-colors ${
+                      isActive ? 'bg-sky-100 text-sky-700' : 'bg-slate-200/80 text-slate-600'
+                    }`}>
+                      {tab.badge}
+                    </span>
+                  )}
                   {isActive && (
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-sky-500 rounded-full animate-in fade-in zoom-in-50 duration-200" />
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-sky-500 to-indigo-600 rounded-full" />
                   )}
                 </button>
               );
             })}
           </nav>
           
-          <div className="text-[11px] text-slate-400 hidden lg:flex items-center space-x-1.5 pl-3">
-            <Sparkles className="h-3 w-3 text-amber-500" />
-            <span>最近同步: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '--:--:--'}</span>
+          <div className="text-xs text-slate-400 hidden lg:flex items-center space-x-1.5 pl-4 shrink-0">
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            <span>最近同步: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '--:--:--'}</span>
           </div>
         </div>
 

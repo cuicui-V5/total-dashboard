@@ -267,10 +267,10 @@ export function startBackgroundPoller() {
     pollKuma(kumaConfig);
   }, 5000);
 
-  // BandwagonHost: 30 seconds interval (prevents KiwiVM API rate limiting)
+  // BandwagonHost: 10 minutes interval (KiwiVM VPS traffic and status updates)
   setInterval(() => {
     pollBwh(bwhInstances);
-  }, 30000);
+  }, 10 * 60 * 1000);
 }
 
 /**

@@ -159,83 +159,73 @@ export default function App() {
           )}
 
           {fleetData && (
-            <>
+            <div key={activeTab} className="tab-page-enter">
               {/* TAB 1: CONCISE EXECUTIVE OVERVIEW (综合概览) */}
               {activeTab === 'overview' && (
-                <div key="overview" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
-                  <OverviewPage 
-                    fleetData={fleetData}
-                    onSelectNode={setSelectedNode}
-                    onNavigateTab={setActiveTab}
-                  />
-                </div>
+                <OverviewPage 
+                  fleetData={fleetData}
+                  onSelectNode={setSelectedNode}
+                  onNavigateTab={setActiveTab}
+                />
               )}
 
               {/* TAB 2: DETAILED FLEET NODES (设备节点详情) */}
               {activeTab === 'nodes' && (
-                <div key="nodes" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
-                  <section className="mb-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-2">
-                        <Server className="h-4 w-4 text-sky-600" />
-                        <h2 className="text-base font-bold text-slate-800 tracking-tight">
-                          设备节点详情与规格 ({filteredNodes.length})
-                        </h2>
-                      </div>
-                      <span className="text-xs text-slate-400">
-                        独立异步轮询 • 毫秒级极速响应 • 点击卡片可查看进程与详细挂载
-                      </span>
+                <section className="mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <Server className="h-4 w-4 text-sky-600" />
+                      <h2 className="text-base font-bold text-slate-800 tracking-tight">
+                        设备节点详情与规格 ({filteredNodes.length})
+                      </h2>
                     </div>
+                    <span className="text-xs text-slate-400">
+                      独立异步轮询 • 毫秒级极速响应 • 点击卡片可查看进程与详细挂载
+                    </span>
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {filteredNodes.map(node => (
-                        <NodeCard 
-                          key={node.id} 
-                          node={node} 
-                          onOpenDetails={setSelectedNode} 
-                        />
-                      ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredNodes.map(node => (
+                      <NodeCard 
+                        key={node.id} 
+                        node={node} 
+                        onOpenDetails={setSelectedNode} 
+                      />
+                    ))}
+                  </div>
+
+                  {filteredNodes.length === 0 && (
+                    <div className="p-8 text-center text-xs text-slate-400 bg-white/60 rounded-xl border border-slate-200">
+                      未找到匹配 "{searchQuery}" 的设备节点
                     </div>
-
-                    {filteredNodes.length === 0 && (
-                      <div className="p-8 text-center text-xs text-slate-400 bg-white/60 rounded-xl border border-slate-200">
-                        未找到匹配 "{searchQuery}" 的设备节点
-                      </div>
-                    )}
-                  </section>
-                </div>
+                  )}
+                </section>
               )}
 
               {/* TAB 3: DETAILED KUMA NETWORK MONITORS (网络链路状态) */}
               {activeTab === 'kuma' && (
-                <div key="kuma" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
-                  <section>
-                    <KumaSection kuma={{
-                      ...fleetData.kuma,
-                      monitors: filteredMonitors
-                    }} />
-                  </section>
-                </div>
+                <section>
+                  <KumaSection kuma={{
+                    ...fleetData.kuma,
+                    monitors: filteredMonitors
+                  }} />
+                </section>
               )}
 
               {/* TAB 4: HIGH DENSITY LATENCY CHARTS (千点时序图表) */}
               {activeTab === 'kuma-charts' && (
-                <div key="kuma-charts" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
-                  <section>
-                    <KumaChartsPage kuma={fleetData.kuma} />
-                  </section>
-                </div>
+                <section>
+                  <KumaChartsPage kuma={fleetData.kuma} />
+                </section>
               )}
 
               {/* TAB 5: DETAILED VPS & BANDWIDTH (搬瓦工 VPS 流量) */}
               {activeTab === 'bwh' && (
-                <div key="bwh" className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300 fill-mode-both">
-                  <section>
-                    <BwhSection bwhInstances={filteredBwh} />
-                  </section>
-                </div>
+                <section>
+                  <BwhSection bwhInstances={filteredBwh} />
+                </section>
               )}
-            </>
+            </div>
           )}
 
           {/* Node Detail Popup Drawer */}

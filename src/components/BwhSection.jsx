@@ -151,7 +151,7 @@ export default function BwhSection({ bwhInstances }) {
                   <Calendar className="h-3.5 w-3.5 text-indigo-500" />
                   <span>流量重置日:</span>
                   <span className="font-mono font-medium text-slate-700">
-                    {bw.nextResetDate ? new Date(bw.nextResetDate).toLocaleDateString() : '每周期结算'}
+                    {bw.nextResetDate ? new Date(bw.nextResetDate).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '每周期结算'}
                   </span>
                 </div>
 

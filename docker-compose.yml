@@ -9,6 +9,8 @@ services:
       - "3344:3344"
     volumes:
       - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
     env_file:
       - .env
     healthcheck:

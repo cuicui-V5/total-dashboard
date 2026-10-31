@@ -20,6 +20,12 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
+# Install tzdata and set timezone to China Standard Time (Asia/Shanghai, CST, UTC+8)
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+ENV TZ=Asia/Shanghai
 ENV NODE_ENV=production
 ENV PORT=3344
 

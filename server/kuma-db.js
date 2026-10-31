@@ -56,15 +56,36 @@ export function getHistoryDb() {
   return dbInstance;
 }
 
+// In-memory query cache (10s TTL) for high-frequency dashboard queries
+const historyQueryCache = new Map();
+
+/**
+ * Format epoch timestamp to China Standard Time (UTC+8) string: YYYY-MM-DD HH:mm:ss
+ */
+export function formatChinaDateTime(epochMs) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const cstDate = new Date(Number(epochMs) + (8 * 3600 * 1000));
+  const year = cstDate.getUTCFullYear();
+  const month = pad(cstDate.getUTCMonth() + 1);
+  const day = pad(cstDate.getUTCDate());
+  const hours = pad(cstDate.getUTCHours());
+  const minutes = pad(cstDate.getUTCMinutes());
+  const seconds = pad(cstDate.getUTCSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 /**
  * Record a high-resolution latency snapshot for all active monitors
  */
 export function recordLatencySnapshot(monitors) {
   if (!monitors || monitors.length === 0) return;
 
+  // Invalidate query cache when fresh snapshot is recorded
+  historyQueryCache.clear();
+
   const db = getHistoryDb();
   const nowMs = Date.now();
-  const isoTime = new Date(nowMs).toISOString();
+  const cstTime = formatChinaDateTime(nowMs);
 
   const insertStmt = db.prepare(`
     INSERT INTO kuma_latency_history (monitor_id, monitor_name, ping, status, timestamp, created_at)
@@ -74,7 +95,7 @@ export function recordLatencySnapshot(monitors) {
   for (const m of monitors) {
     const ping = typeof m.pingMs === 'number' && m.pingMs >= 0 ? m.pingMs : 0;
     const isUp = m.status === 'up' ? 1 : 0;
-    insertStmt.run(String(m.id || m.name), m.name, ping, isUp, nowMs, isoTime);
+    insertStmt.run(String(m.id || m.name), m.name, ping, isUp, nowMs, cstTime);
   }
 }
 
@@ -125,7 +146,7 @@ export async function seedFromOfficialKuma(kumaUrl, apiKey) {
 
         const ping = typeof h.ping === 'number' ? Number(h.ping.toFixed(1)) : 0;
         const status = h.status ?? 1;
-        insertStmt.run(monId, monName, ping, status, epochMs, new Date(epochMs).toISOString());
+        insertStmt.run(monId, monName, ping, status, epochMs, formatChinaDateTime(epochMs));
         seededCount++;
       }
     }
@@ -153,11 +174,11 @@ export function cleanupRetention(maxDays = 30) {
 }
 
 /**
- * Balanced ~1,000-Point Range Configuration:
- * - 1h: 原始无损数据展示 (Raw timestamps captured by poller)
- * - 24h: 1分钟步长 (1,441 点)
- * - 7d: 10分钟步长 (1,009 点)
- * - 30d: 30分钟步长 (1,441 点)
+ * High-Density ~6,000-Point Range Configuration:
+ * - 1h: 原始秒级采样 (Raw timestamps captured by poller ~360 点)
+ * - 24h: 14.4秒无损高密步长 (6,001 点)
+ * - 7d: 100.8秒精细步长 (6,001 点)
+ * - 30d: 432秒 (7.2分钟) 长效追踪步长 (6,001 点)
  */
 const RANGE_CONFIG = {
   '1h': {
@@ -169,34 +190,35 @@ const RANGE_CONFIG = {
   '24h': {
     isRaw: false,
     durationMs: 24 * 3600 * 1000,
-    stepMs: 60 * 1000,
-    stepSec: 60,
+    stepMs: 14400, // 86,400,000 / 6000 = 14400ms = 14.4s -> 6,001 点
+    stepSec: 14.4,
     labelFormat: 'time'
   },
   '7d': {
     isRaw: false,
     durationMs: 7 * 24 * 3600 * 1000,
-    stepMs: 600 * 1000, // 10 minutes -> 1,008 points
-    stepSec: 600,
+    stepMs: 100800, // 604,800,000 / 6000 = 100800ms = 100.8s -> 6,001 点
+    stepSec: 100.8,
     labelFormat: 'datetime'
   },
   '30d': {
     isRaw: false,
     durationMs: 30 * 24 * 3600 * 1000,
-    stepMs: 1800 * 1000, // 30 minutes -> 1,440 points
-    stepSec: 1800,
+    stepMs: 432000, // 2,592,000,000 / 6000 = 432000ms = 432s = 7.2min -> 6,001 点
+    stepSec: 432,
     labelFormat: 'datetime'
   }
 };
 
 function formatTimeLabel(epochMs, formatType) {
-  const d = new Date(epochMs);
   const pad = (n) => String(n).padStart(2, '0');
-  const hours = pad(d.getHours());
-  const minutes = pad(d.getMinutes());
-  const seconds = pad(d.getSeconds());
-  const month = pad(d.getMonth() + 1);
-  const day = pad(d.getDate());
+  // Explicit China Standard Time (UTC+8) offset calculation
+  const cstDate = new Date(Number(epochMs) + (8 * 3600 * 1000));
+  const month = pad(cstDate.getUTCMonth() + 1);
+  const day = pad(cstDate.getUTCDate());
+  const hours = pad(cstDate.getUTCHours());
+  const minutes = pad(cstDate.getUTCMinutes());
+  const seconds = pad(cstDate.getUTCSeconds());
 
   if (formatType === 'time-sec') {
     return `${hours}:${minutes}:${seconds}`;
@@ -212,9 +234,15 @@ function formatTimeLabel(epochMs, formatType) {
  */
 export function queryLatencyHistory(range = '24h') {
   const cfg = RANGE_CONFIG[range] || RANGE_CONFIG['24h'];
-  const db = getHistoryDb();
-
   const nowMs = Date.now();
+
+  // Fast path: In-memory cache hit (0ms execution)
+  const cached = historyQueryCache.get(range);
+  if (cached && (nowMs - cached.timestamp < 10000)) {
+    return cached.data;
+  }
+
+  const db = getHistoryDb();
   const startTime = nowMs - cfg.durationMs;
 
   // 1. Get all known monitors in the database
@@ -465,13 +493,18 @@ export function queryLatencyHistory(range = '24h') {
     };
   });
 
-  return {
+  const result = {
     range,
     stepSec: cfg.stepSec,
+    targetPoints: cfg.isRaw ? null : 6000,
     isRaw: cfg.isRaw,
     source: 'local-sqlite',
     monitors: finalizedMonitors,
     timeline,
     timestamp: new Date().toISOString()
   };
+
+  // Cache final computed timeline in memory
+  historyQueryCache.set(range, { timestamp: nowMs, data: result });
+  return result;
 }

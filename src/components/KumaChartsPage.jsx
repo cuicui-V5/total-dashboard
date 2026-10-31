@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { 
   Activity, 
@@ -13,7 +13,8 @@ import {
   ChevronDown,
   Calendar,
   RefreshCw,
-  Info
+  Info,
+  Waves
 } from 'lucide-react';
 import { getLatencyBadge } from '../utils/format';
 
@@ -25,6 +26,12 @@ export default function KumaChartsPage({ kuma }) {
   const [selectedRange, setSelectedRange] = useState('24h');
   const [rangeData, setRangeData] = useState(null);
   const [isRangeLoading, setIsRangeLoading] = useState(false);
+
+  // Smoothing Mode Toggle (true: Monotone smooth curve, false: Raw polylines)
+  const [isSmooth, setIsSmooth] = useState(true);
+
+  // Focused Monitor on hover/legend interaction for visual isolation
+  const [focusedMonitor, setFocusedMonitor] = useState(null);
 
   // Fetch range data from /api/kuma/history
   useEffect(() => {
@@ -71,8 +78,10 @@ export default function KumaChartsPage({ kuma }) {
     }
   }, [monitors]);
 
-  // Hover state for interactive chart crosshair
+  // Hover state for interactive chart crosshair & tooltip
   const [hoverIndex, setHoverIndex] = useState(null);
+  const [hoverRatio, setHoverRatio] = useState(0);
+  const rafRef = useRef(null);
 
   // Toggle monitor visibility
   const toggleMonitor = (name) => {
@@ -166,28 +175,112 @@ export default function KumaChartsPage({ kuma }) {
     return Math.ceil((max * 1.15) / 50) * 50 || 100;
   }, [timeline, monitors, visibleMonitors]);
 
-  // Generate SVG path for a specific monitor
-  const getMonitorPath = (monName) => {
-    if (timeline.length === 0) return '';
-    const points = timeline.map((pt, i) => {
-      const x = padding.left + (i / Math.max(1, timeline.length - 1)) * innerWidth;
-      const val = pt[monName] ?? 0;
-      const y = padding.top + innerHeight - (Math.min(val, maxY) / maxY) * innerHeight;
-      return { x, y };
+  // Pre-calculated, high-performance memoized SVG paths with adaptive sub-pixel decimation & Catmull-Rom smoothing
+  const chartPaths = useMemo(() => {
+    if (!timeline || timeline.length === 0) return {};
+    const rawCount = timeline.length;
+    // Map to ~1,200 points for pixel-perfect smooth visual representation without GPU/DOM bloat
+    const targetPoints = Math.min(rawCount, Math.max(1200, Math.round(innerWidth * 1.5)));
+    const bucketSize = rawCount / targetPoints;
+
+    const paths = {};
+
+    monitors.forEach(m => {
+      if (!visibleMonitors[m.name]) return;
+      const monName = m.name;
+      const points = [];
+
+      if (rawCount <= targetPoints) {
+        for (let i = 0; i < rawCount; i++) {
+          const x = padding.left + (i / Math.max(1, rawCount - 1)) * innerWidth;
+          const val = timeline[i][monName] ?? 0;
+          const y = padding.top + innerHeight - (Math.min(val, maxY) / maxY) * innerHeight;
+          points.push({ x, y, val });
+        }
+      } else {
+        for (let i = 0; i < targetPoints; i++) {
+          const start = Math.floor(i * bucketSize);
+          const end = Math.min(rawCount, Math.floor((i + 1) * bucketSize));
+          let sumVal = 0, count = 0;
+          for (let j = start; j < end; j++) {
+            const v = timeline[j][monName];
+            if (typeof v === 'number') {
+              sumVal += v;
+              count++;
+            }
+          }
+          const midIdx = Math.floor((start + end) / 2);
+          const x = padding.left + (midIdx / Math.max(1, rawCount - 1)) * innerWidth;
+          const val = count > 0 ? (sumVal / count) : 0;
+          const y = padding.top + innerHeight - (Math.min(val, maxY) / maxY) * innerHeight;
+          points.push({ x, y, val });
+        }
+      }
+
+      if (points.length === 0) return;
+
+      const firstX = points[0].x;
+      const lastX = points[points.length - 1].x;
+      const bottomY = padding.top + innerHeight;
+
+      let lineD = '';
+      if (isSmooth && points.length > 2) {
+        lineD = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+        const tension = 0.18;
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = i > 0 ? points[i - 1] : points[i];
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const p3 = i < points.length - 2 ? points[i + 2] : p2;
+
+          const cp1x = p1.x + (p2.x - p0.x) * tension;
+          let cp1y = p1.y + (p2.y - p0.y) * tension;
+          const cp2x = p2.x - (p3.x - p1.x) * tension;
+          let cp2y = p2.y - (p3.y - p1.y) * tension;
+
+          const minY = Math.min(p1.y, p2.y);
+          const maxYVal = Math.max(p1.y, p2.y);
+          cp1y = Math.max(minY - 2, Math.min(maxYVal + 2, cp1y));
+          cp2y = Math.max(minY - 2, Math.min(maxYVal + 2, cp2y));
+
+          lineD += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+        }
+      } else {
+        lineD = points.reduce((acc, p, i) => {
+          return i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}` : `${acc} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+        }, '');
+      }
+
+      const areaD = `${lineD} L ${lastX.toFixed(1)} ${bottomY.toFixed(1)} L ${firstX.toFixed(1)} ${bottomY.toFixed(1)} Z`;
+      paths[monName] = { lineD, areaD };
     });
 
-    return points.reduce((acc, p, i) => {
-      return i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}` : `${acc} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-    }, '');
-  };
+    return paths;
+  }, [timeline, monitors, visibleMonitors, isSmooth, maxY, padding, innerWidth, innerHeight]);
+
+  // Evenly spaced X-axis ticks (O(1) calculation)
+  const xTicks = useMemo(() => {
+    if (!timeline || timeline.length === 0) return [];
+    const count = 6;
+    const ticks = [];
+    for (let i = 0; i <= count; i++) {
+      const idx = Math.min(timeline.length - 1, Math.round((i / count) * (timeline.length - 1)));
+      const pt = timeline[idx];
+      if (pt) {
+        const x = padding.left + (idx / Math.max(1, timeline.length - 1)) * innerWidth;
+        ticks.push({ x, label: pt.label || '' });
+      }
+    }
+    return ticks;
+  }, [timeline, padding.left, innerWidth]);
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(ratio => Math.round(maxY * ratio));
 
   const timeRanges = [
-    { id: '1h', label: '最近 1 小时', desc: '原始秒级无损采样' },
-    { id: '24h', label: '过去 24 小时', desc: '1分钟高密 (~1440点)' },
-    { id: '7d', label: '过去 7 天', desc: '10分钟高密 (~1000点)' },
-    { id: '30d', label: '过去 30 天', desc: '半小时高密 (~1440点)' },
+    { id: '1h', label: '最近 1 小时', desc: '原始秒级采样 (~360点)' },
+    { id: '24h', label: '过去 24 小时', desc: '14.4秒无损高密 (~6000点)' },
+    { id: '7d', label: '过去 7 天', desc: '1.6分钟精细粒度 (~6000点)' },
+    { id: '30d', label: '过去 30 天', desc: '7.2分钟长效追踪 (~6000点)' },
   ];
 
   return (
@@ -319,49 +412,73 @@ export default function KumaChartsPage({ kuma }) {
             </p>
           </div>
 
-          {/* Quick preset filters */}
-          <div className="flex items-center space-x-1.5 text-xs">
+          {/* Quick preset filters & Smoothing toggle */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Smoothing Mode Toggle Button */}
             <button
-              onClick={selectAll}
-              className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
+              onClick={() => setIsSmooth(!isSmooth)}
+              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border font-medium transition-all ${
+                isSmooth
+                  ? 'bg-sky-50 border-sky-300 text-sky-700 shadow-sm font-semibold'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title="切换曲线平滑模式与原始折线"
             >
-              全选
+              <Waves className={`h-3.5 w-3.5 ${isSmooth ? 'text-sky-600' : 'text-slate-400'}`} />
+              <span>{isSmooth ? '平滑曲线 (开启)' : '原始折线'}</span>
             </button>
-            <button
-              onClick={selectDomestic}
-              className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
-            >
-              只看内网/国内
-            </button>
-            <button
-              onClick={selectOverseas}
-              className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
-            >
-              只看海外 VPS
-            </button>
+
+            <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={selectAll}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
+              >
+                全选
+              </button>
+              <button
+                onClick={selectDomestic}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
+              >
+                内网/国内
+              </button>
+              <button
+                onClick={selectOverseas}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors"
+              >
+                海外 VPS
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Legend / Filter Pills */}
+        {/* Legend / Filter Pills with Hover Isolation */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {monitors.map(m => {
             const isVisible = visibleMonitors[m.name];
+            const isFocused = focusedMonitor === m.name;
             return (
               <button
                 key={m.name}
                 onClick={() => toggleMonitor(m.name)}
+                onMouseEnter={() => setFocusedMonitor(m.name)}
+                onMouseLeave={() => setFocusedMonitor(null)}
                 className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono font-medium transition-all border ${
                   isVisible
-                    ? 'bg-white shadow-sm border-slate-300 text-slate-800'
+                    ? (isFocused
+                        ? 'bg-white shadow-md border-sky-400 ring-2 ring-sky-300/60 text-slate-900 scale-105'
+                        : 'bg-white shadow-sm border-slate-300 text-slate-800 hover:border-slate-400')
                     : 'bg-slate-100/70 border-slate-200 text-slate-400 opacity-60 line-through'
                 }`}
+                title={`点击显示/隐藏；悬停聚焦单条链路`}
               >
                 <span 
-                  className="h-2.5 w-2.5 rounded-full" 
+                  className="h-2.5 w-2.5 rounded-full transition-transform" 
                   style={{ backgroundColor: isVisible ? m.color : '#94a3b8' }} 
                 />
-                <span>{m.name}</span>
-                <span className="text-[10px] text-slate-400 font-normal">
+                <span className="font-semibold">{m.name}</span>
+                <span className="text-[10px] text-slate-500 font-normal">
                   ({m.stats?.avgPing ?? m.pingMs ?? 0}ms)
                 </span>
               </button>
@@ -369,13 +486,26 @@ export default function KumaChartsPage({ kuma }) {
           })}
         </div>
 
-        {/* SVG Multi-Line Chart */}
+        {/* SVG Multi-Line Chart with GPU-friendly rendering */}
         <div className="relative w-full overflow-x-auto">
           <svg 
             viewBox={`0 0 ${chartWidth} ${chartHeight}`} 
             className="w-full h-auto min-w-[650px] overflow-visible"
-            onMouseLeave={() => setHoverIndex(null)}
+            onMouseLeave={() => {
+              setHoverIndex(null);
+            }}
           >
+            {/* SVG Gradients for Focused Monitor Area Glow */}
+            <defs>
+              {monitors.map(m => (
+                <linearGradient key={m.name} id={`grad-${m.name}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor={m.color} stopOpacity="0.25" />
+                  <stop offset="85%" stopColor={m.color} stopOpacity="0.03" />
+                  <stop offset="100%" stopColor={m.color} stopOpacity="0" />
+                </linearGradient>
+              ))}
+            </defs>
+
             {/* Grid Lines & Y-axis labels */}
             {yTicks.map((val, idx) => {
               const y = padding.top + innerHeight - (val / maxY) * innerHeight;
@@ -402,46 +532,57 @@ export default function KumaChartsPage({ kuma }) {
               );
             })}
 
-            {/* X-axis time marks */}
-            {timeline.filter((_, idx) => idx % Math.max(1, Math.floor(timeline.length / 6)) === 0).map((pt, idx) => {
-              const pointIndex = timeline.indexOf(pt);
-              const x = padding.left + (pointIndex / Math.max(1, timeline.length - 1)) * innerWidth;
-              return (
-                <g key={idx}>
-                  <line 
-                    x1={x} 
-                    y1={padding.top + innerHeight} 
-                    x2={x} 
-                    y2={padding.top + innerHeight + 4} 
-                    stroke="#cbd5e1" 
-                    strokeWidth="1" 
-                  />
-                  <text 
-                    x={x} 
-                    y={padding.top + innerHeight + 16} 
-                    textAnchor="middle" 
-                    className="text-[10px] font-mono fill-slate-400"
-                  >
-                    {pt.label}
-                  </text>
-                </g>
-              );
-            })}
+            {/* X-axis time marks (Optimized O(1)) */}
+            {xTicks.map((tick, idx) => (
+              <g key={idx}>
+                <line 
+                  x1={tick.x} 
+                  y1={padding.top + innerHeight} 
+                  x2={tick.x} 
+                  y2={padding.top + innerHeight + 4} 
+                  stroke="#cbd5e1" 
+                  strokeWidth="1" 
+                />
+                <text 
+                  x={tick.x} 
+                  y={padding.top + innerHeight + 16} 
+                  textAnchor="middle" 
+                  className="text-[10px] font-mono fill-slate-400"
+                >
+                  {tick.label}
+                </text>
+              </g>
+            ))}
 
-            {/* Monitor Paths */}
+            {/* Focused Monitor Area Fill (Rendered underneath lines) */}
+            {focusedMonitor && visibleMonitors[focusedMonitor] && chartPaths[focusedMonitor]?.areaD && (
+              <path
+                d={chartPaths[focusedMonitor].areaD}
+                fill={`url(#grad-${focusedMonitor})`}
+                pointerEvents="none"
+                className="transition-all duration-200"
+              />
+            )}
+
+            {/* Monitor Paths (Precomputed and memoized) */}
             {monitors.map(m => {
               if (!visibleMonitors[m.name]) return null;
-              const pathD = getMonitorPath(m.name);
+              const pathData = chartPaths[m.name];
+              if (!pathData || !pathData.lineD) return null;
+              const isFocused = focusedMonitor === m.name;
+              const hasFocus = Boolean(focusedMonitor);
+
               return (
                 <path
                   key={m.name}
-                  d={pathD}
+                  d={pathData.lineD}
                   fill="none"
                   stroke={m.color}
-                  strokeWidth="2.2"
+                  strokeWidth={isFocused ? "2.8" : (hasFocus ? "1.2" : "1.8")}
+                  strokeOpacity={isFocused ? 1 : (hasFocus ? 0.22 : 0.88)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="transition-all duration-300 opacity-90 hover:opacity-100"
+                  className="transition-all duration-150"
                 />
               );
             })}
@@ -452,7 +593,7 @@ export default function KumaChartsPage({ kuma }) {
               const point = timeline[hoverIndex];
 
               return (
-                <g>
+                <g pointerEvents="none">
                   {/* Vertical Guide Line */}
                   <line 
                     x1={hoverX} 
@@ -469,15 +610,17 @@ export default function KumaChartsPage({ kuma }) {
                     if (!visibleMonitors[m.name]) return null;
                     const val = point[m.name] ?? 0;
                     const y = padding.top + innerHeight - (Math.min(val, maxY) / maxY) * innerHeight;
+                    const isFocused = focusedMonitor === m.name;
                     return (
                       <circle
                         key={m.name}
                         cx={hoverX}
                         cy={y}
-                        r="4"
+                        r={isFocused ? "5.5" : "3.5"}
                         fill="white"
                         stroke={m.color}
-                        strokeWidth="2.5"
+                        strokeWidth={isFocused ? "3" : "2"}
+                        className="transition-all duration-75"
                       />
                     );
                   })}
@@ -485,7 +628,7 @@ export default function KumaChartsPage({ kuma }) {
               );
             })()}
 
-            {/* Transparent overlay for mouse move capture */}
+            {/* Transparent overlay for mouse move capture with RAF throttling */}
             <rect
               x={padding.left}
               y={padding.top}
@@ -493,48 +636,78 @@ export default function KumaChartsPage({ kuma }) {
               height={innerHeight}
               fill="transparent"
               onMouseMove={(e) => {
+                if (!timeline || timeline.length === 0) return;
                 const rect = e.currentTarget.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const ratio = Math.max(0, Math.min(1, mouseX / rect.width));
                 const index = Math.round(ratio * (timeline.length - 1));
-                setHoverIndex(index);
+
+                if (rafRef.current) cancelAnimationFrame(rafRef.current);
+                rafRef.current = requestAnimationFrame(() => {
+                  setHoverIndex(index);
+                  setHoverRatio(ratio);
+                });
               }}
             />
           </svg>
 
-          {/* Interactive Floating Tooltip */}
-          {hoverIndex !== null && timeline[hoverIndex] && (
-            <div 
-              className="absolute top-4 right-4 bg-white/95 backdrop-blur-md rounded-xl p-3.5 shadow-xl border border-slate-200/90 text-xs font-mono pointer-events-none z-10 animate-in fade-in zoom-in-95 duration-100 min-w-[220px]"
-            >
-              <div className="font-semibold text-slate-700 pb-1.5 border-b border-slate-100 mb-2 flex items-center justify-between">
-                <span>采样时间</span>
-                <span className="text-slate-500 font-normal">
-                  {timeline[hoverIndex].timestamp
-                    ? new Date(timeline[hoverIndex].timestamp).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' +
-                      new Date(timeline[hoverIndex].timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-                    : (timeline[hoverIndex].time || '--')}
-                </span>
+          {/* Dynamic Non-occluding Floating Tooltip */}
+          {hoverIndex !== null && timeline[hoverIndex] && (() => {
+            const point = timeline[hoverIndex];
+            const sortedMonitors = monitors
+              .filter(m => visibleMonitors[m.name])
+              .sort((a, b) => {
+                if (focusedMonitor === a.name) return -1;
+                if (focusedMonitor === b.name) return 1;
+                const pingA = point[a.name] ?? 9999;
+                const pingB = point[b.name] ?? 9999;
+                return pingA - pingB;
+              });
+
+            const isLeft = hoverRatio > 0.62;
+
+            return (
+              <div 
+                className={`absolute top-4 ${isLeft ? 'left-16' : 'right-4'} bg-white/95 backdrop-blur-md rounded-xl p-3.5 shadow-xl border border-slate-200/90 text-xs font-mono pointer-events-none z-10 animate-in fade-in zoom-in-95 duration-100 min-w-[230px]`}
+              >
+                <div className="font-semibold text-slate-700 pb-1.5 border-b border-slate-100 mb-2 flex items-center justify-between">
+                  <span>采样点详细时间</span>
+                  <span className="text-slate-500 font-normal">
+                    {point.timestamp
+                      ? new Date(point.timestamp).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }) + ' ' +
+                        new Date(point.timestamp).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+                      : (point.time || '--')}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {sortedMonitors.map(m => {
+                    const val = point[m.name];
+                    const isDown = point[`${m.name}_status`] === 0;
+                    const isFocused = focusedMonitor === m.name;
+                    return (
+                      <div 
+                        key={m.name} 
+                        className={`flex items-center justify-between px-1 py-0.5 rounded transition-colors ${
+                          isFocused ? 'bg-sky-50 font-bold' : ''
+                        }`}
+                      >
+                        <span className="flex items-center space-x-1.5 text-slate-600">
+                          <span 
+                            className={`rounded-full transition-all ${isFocused ? 'h-2.5 w-2.5 ring-2 ring-sky-300' : 'h-2 w-2'}`} 
+                            style={{ backgroundColor: m.color }} 
+                          />
+                          <span className={isFocused ? 'text-slate-900 font-bold' : ''}>{m.name}</span>
+                        </span>
+                        <strong className={isDown ? "text-rose-600" : (isFocused ? "text-sky-700" : "text-slate-800")}>
+                          {isDown ? "Down" : (typeof val === 'number' ? `${val} ms` : '-- ms')}
+                        </strong>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-1.5">
-                {monitors.filter(m => visibleMonitors[m.name]).map(m => {
-                  const val = timeline[hoverIndex][m.name];
-                  const isDown = timeline[hoverIndex][`${m.name}_status`] === 0;
-                  return (
-                    <div key={m.name} className="flex items-center justify-between">
-                      <span className="flex items-center space-x-1.5 text-slate-600">
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} />
-                        <span>{m.name}</span>
-                      </span>
-                      <strong className={isDown ? "text-rose-600" : "text-slate-800"}>
-                        {isDown ? "Down" : (typeof val === 'number' ? `${val} ms` : '-- ms')}
-                      </strong>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 

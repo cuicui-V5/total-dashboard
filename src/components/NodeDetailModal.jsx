@@ -201,7 +201,7 @@ export default function NodeDetailModal({ node, onClose }) {
                 </span>
               </div>
               <span className="text-slate-400">
-                更新于 {fullData?.fullFetchedAt ? new Date(fullData.fullFetchedAt).toLocaleTimeString() : '刚刚'}
+                更新于 {fullData?.fullFetchedAt ? new Date(fullData.fullFetchedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '刚刚'}
               </span>
             </div>
           )}

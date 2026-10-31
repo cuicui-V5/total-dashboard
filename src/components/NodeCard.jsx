@@ -83,7 +83,7 @@ export default function NodeCard({ node, onOpenDetails }) {
             </div>
             {node.lastSeen && (
               <span className="text-[10px] text-amber-600 font-mono">
-                {new Date(node.lastSeen).toLocaleTimeString()}
+                {new Date(node.lastSeen).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}
               </span>
             )}
           </div>
