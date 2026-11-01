@@ -14,11 +14,16 @@ import {
   Calendar,
   RefreshCw,
   Info,
-  Waves
+  Waves,
+  ShieldCheck,
+  ShieldAlert,
+  XCircle,
+  Server
 } from 'lucide-react';
 import { getLatencyBadge } from '../utils/format';
 
-export default function KumaChartsPage({ kuma }) {
+export default function KumaChartsPage({ kuma, filteredMonitors }) {
+  const liveMonitors = filteredMonitors || kuma?.monitors || [];
   const defaultMonitors = kuma?.monitors || [];
   const defaultTimeline = kuma?.timeline || [];
 
@@ -296,7 +301,7 @@ export default function KumaChartsPage({ kuma }) {
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-bold text-slate-800 tracking-tight">
-                  Uptime Kuma 链路延迟与历史分析
+                  网络链路健康监控与时序分析
                 </h2>
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">
                   {timeRanges.find(r => r.id === selectedRange)?.desc || '历史时序'}
@@ -306,7 +311,7 @@ export default function KumaChartsPage({ kuma }) {
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                实时对比局域网设备、国内核心网站与海外云主机的 Ping 响应延迟、网络抖动与长效可用率
+                实时监测内网设备、公网 VPS、DNS 与核心服务在线可用率、响应延迟、历史抖动与 SSL 证书
               </p>
             </div>
           </div>
@@ -393,6 +398,114 @@ export default function KumaChartsPage({ kuma }) {
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Real-time Monitor Endpoints Grid (从原网络链路 Tab 整合而来) */}
+      <div className="glass-panel rounded-2xl p-6 shadow-subtle border border-slate-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3 mb-5">
+          <div className="flex items-center space-x-3">
+            <div className="h-9 w-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
+              <Server className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800 tracking-tight">
+                实时链路服务节点 ({liveMonitors.length})
+              </h3>
+              <p className="text-xs text-slate-500">
+                实时检测公网 VPS、本地路由、DNS 与核心服务可用率与 SSL 证书（悬停卡片可联动高亮下方折线）
+              </p>
+            </div>
+          </div>
+
+          {/* Status badges */}
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+            <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>正常: {kuma?.upCount ?? liveMonitors.filter(m => m.status === 'up').length}</span>
+            </span>
+            {(kuma?.downCount > 0 || liveMonitors.some(m => m.status !== 'up')) && (
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                <XCircle className="h-3.5 w-3.5" />
+                <span>异常: {kuma?.downCount ?? liveMonitors.filter(m => m.status !== 'up').length}</span>
+              </span>
+            )}
+            <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200/60 font-medium">
+              可用率 {kuma?.healthPercent ?? 100}%
+            </span>
+          </div>
+        </div>
+
+        {/* Monitors Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+          {liveMonitors.map((mon, idx) => {
+            const isUp = mon.status === 'up';
+            const latency = getLatencyBadge(mon.pingMs);
+            const isFocused = focusedMonitor === mon.name;
+
+            return (
+              <div 
+                key={mon.id || mon.name || idx}
+                onMouseEnter={() => setFocusedMonitor(mon.name)}
+                onMouseLeave={() => setFocusedMonitor(null)}
+                className={`p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between cursor-pointer ${
+                  isFocused
+                    ? 'ring-2 ring-sky-400 border-sky-300 shadow-md bg-white scale-[1.02]'
+                    : (isUp 
+                        ? 'bg-white/90 border-slate-200/80 hover:border-slate-300 hover:shadow-sm' 
+                        : 'bg-rose-50/50 border-rose-200')
+                }`}
+                title="悬停可在下方折线图中聚焦高亮本链路"
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${isUp ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-rose-500'}`} />
+                      <span className="font-semibold text-slate-800 text-sm">{mon.name}</span>
+                    </div>
+
+                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${
+                      mon.type === 'http' 
+                        ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}>
+                      {mon.type || 'PING'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 font-mono truncate mb-3">
+                    {mon.hostname || mon.url || '--'}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  {/* Ping latency */}
+                  <div className="flex items-center space-x-1.5">
+                    <Clock className="h-3 w-3 text-slate-400" />
+                    <span className="text-[11px] text-slate-500 font-medium">响应:</span>
+                    <span className={`text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded border ${latency.color}`}>
+                      {latency.text}
+                    </span>
+                  </div>
+
+                  {/* SSL info if available */}
+                  {mon.certDaysRemaining !== null && mon.certDaysRemaining !== undefined ? (
+                    <div 
+                      className="flex items-center space-x-1 text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono"
+                      title={`SSL 证书有效期: 剩余 ${mon.certDaysRemaining} 天`}
+                    >
+                      <ShieldCheck className="h-3 w-3" />
+                      <span>SSL {mon.certDaysRemaining}d</span>
+                    </div>
+                  ) : (
+                    <span className={`text-[10px] font-medium font-mono ${isUp ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {isUp ? 'ACTIVE' : 'DOWN'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

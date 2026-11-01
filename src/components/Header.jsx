@@ -31,7 +31,6 @@ export default function Header({
     { id: 'overview', label: '综合概览', icon: Layers },
     { id: 'nodes', label: '设备节点', badge: totalNodes, icon: Server },
     { id: 'kuma', label: '网络链路', icon: Activity },
-    { id: 'kuma-charts', label: '时序图表', icon: TrendingUp },
     { id: 'bwh', label: 'VPS 流量', icon: HardDriveDownload },
   ];
 

@@ -202,24 +202,17 @@ export default function App() {
                 </section>
               )}
 
-              {/* TAB 3: DETAILED KUMA NETWORK MONITORS (网络链路状态) */}
+              {/* TAB 3: UNIFIED NETWORK LINKS & TIME-SERIES CHARTS (网络链路与时序分析) */}
               {activeTab === 'kuma' && (
                 <section>
-                  <KumaSection kuma={{
-                    ...fleetData.kuma,
-                    monitors: filteredMonitors
-                  }} />
+                  <KumaChartsPage 
+                    kuma={fleetData.kuma} 
+                    filteredMonitors={filteredMonitors} 
+                  />
                 </section>
               )}
 
-              {/* TAB 4: HIGH DENSITY LATENCY CHARTS (千点时序图表) */}
-              {activeTab === 'kuma-charts' && (
-                <section>
-                  <KumaChartsPage kuma={fleetData.kuma} />
-                </section>
-              )}
-
-              {/* TAB 5: DETAILED VPS & BANDWIDTH (搬瓦工 VPS 流量) */}
+              {/* TAB 4: DETAILED VPS & BANDWIDTH (搬瓦工 VPS 流量) */}
               {activeTab === 'bwh' && (
                 <section>
                   <BwhSection bwhInstances={filteredBwh} />

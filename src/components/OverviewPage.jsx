@@ -249,10 +249,10 @@ export default function OverviewPage({
             </div>
 
             <button
-              onClick={() => onNavigateTab('kuma-charts')}
+              onClick={() => onNavigateTab('kuma')}
               className="px-3.5 py-1.5 rounded-lg bg-white shadow-sm border border-sky-200 text-sky-700 hover:bg-sky-50 text-xs font-bold transition-all shrink-0"
             >
-              打开千点图表 →
+              进入网络链路 →
             </button>
           </div>
         </div>
@@ -311,7 +311,7 @@ export default function OverviewPage({
           </div>
 
           <button
-            onClick={() => onNavigateTab('kuma-charts')}
+            onClick={() => onNavigateTab('kuma')}
             className="w-full mt-4 py-2 text-center text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors"
           >
             查看完整链路排行与抖动统计
